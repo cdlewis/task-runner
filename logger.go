@@ -9,9 +9,21 @@ import (
 
 const separator = "================================================================================"
 
+// Outcome represents the result of processing a candidate.
+type Outcome string
+
+const (
+	OutcomeFixed         Outcome = "FIXED"
+	OutcomeFixedReverted Outcome = "FIXED_BUT_REVERTED" // Fixed but build failed, had to revert
+	OutcomeNotFixed      Outcome = "NOT_FIXED"
+	OutcomeBestEffort    Outcome = "BEST_EFFORT" // Not fixed but partial progress committed
+	OutcomeBuildFailed   Outcome = "BUILD_FAILED"
+)
+
 // ClaudeLogger handles logging of Claude interactions.
 type ClaudeLogger struct {
-	file *os.File
+	file      *os.File
+	startTime time.Time
 }
 
 // NewClaudeLogger creates a new logger for Claude interactions.
@@ -27,10 +39,19 @@ func NewClaudeLogger(taskDir string) (*ClaudeLogger, error) {
 
 // StartEntry begins a new log entry with timestamp and prompt.
 func (l *ClaudeLogger) StartEntry(prompt string) error {
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	l.startTime = time.Now()
+	timestamp := l.startTime.Format("2006-01-02 15:04:05")
 
 	_, err := fmt.Fprintf(l.file, "\n%s\nTimestamp: %s\nPrompt: %s\n%s\n",
 		separator, timestamp, prompt, separator)
+	return err
+}
+
+// LogOutcome logs the result of processing the candidate.
+func (l *ClaudeLogger) LogOutcome(outcome Outcome, details string) error {
+	duration := time.Since(l.startTime)
+	_, err := fmt.Fprintf(l.file, "\n%s\nOutcome: %s\nDuration: %s\nDetails: %s\n",
+		separator, outcome, formatDuration(duration), details)
 	return err
 }
 
@@ -56,4 +77,14 @@ func (l *ClaudeLogger) Close() error {
 // Path returns the path to the log file.
 func (l *ClaudeLogger) Path() string {
 	return l.file.Name()
+}
+
+// formatDuration formats a duration in a human-readable way.
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	minutes := int(d.Minutes())
+	seconds := int(d.Seconds()) % 60
+	return fmt.Sprintf("%dm%02ds", minutes, seconds)
 }

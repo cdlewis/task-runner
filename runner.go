@@ -17,12 +17,12 @@ type RunnerOptions struct {
 }
 
 type Runner struct {
-	env          *Environment
-	task         Task
-	opts         RunnerOptions
-	ignoredList  *IgnoredList
-	claudeLogger *ClaudeLogger
-	stopRequested bool
+	env              *Environment
+	task             Task
+	opts             RunnerOptions
+	ignoredList      *IgnoredList
+	claudeLogger     *ClaudeLogger
+	stopRequested    bool
 	consecutiveFails int
 }
 
@@ -213,6 +213,7 @@ func (r *Runner) handleSuccess(candidate *Candidate) (bool, error) {
 			return false, fmt.Errorf("build still fails after reset")
 		}
 		fmt.Println("Recovered via reset.")
+		r.logOutcome(OutcomeFixedReverted, "build failed after fix")
 		if err := r.ignoredList.Add(candidate.Key); err != nil {
 			return false, err
 		}
@@ -235,6 +236,9 @@ func (r *Runner) handleSuccess(candidate *Candidate) (bool, error) {
 		if !ok {
 			fmt.Println("Warning: success command returned non-zero exit code")
 		}
+		r.logOutcome(OutcomeFixed, "committed")
+	} else {
+		r.logOutcome(OutcomeFixed, "no changes to commit")
 	}
 
 	return false, nil
@@ -263,6 +267,9 @@ func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
 				if !ok {
 					fmt.Println("Warning: best effort commit returned non-zero exit code")
 				}
+				r.logOutcome(OutcomeBestEffort, "partial progress committed")
+			} else {
+				r.logOutcome(OutcomeNotFixed, "no changes made")
 			}
 		} else {
 			// Build failed, reset
@@ -273,6 +280,7 @@ func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
 			if !r.runVerify() {
 				return false, fmt.Errorf("build still fails after reset")
 			}
+			r.logOutcome(OutcomeBuildFailed, "reverted")
 		}
 	} else {
 		// Standard mode: reset changes
@@ -283,6 +291,7 @@ func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
 		if !r.runVerify() {
 			return false, fmt.Errorf("build fails after reset")
 		}
+		r.logOutcome(OutcomeNotFixed, "reverted")
 	}
 
 	if err := r.ignoredList.Add(candidate.Key); err != nil {
@@ -344,6 +353,12 @@ func (r *Runner) modeString() string {
 		return "best-effort"
 	}
 	return "standard"
+}
+
+func (r *Runner) logOutcome(outcome Outcome, details string) {
+	if r.claudeLogger != nil {
+		r.claudeLogger.LogOutcome(outcome, details)
+	}
 }
 
 func containsKey(candidates []Candidate, key string) bool {
