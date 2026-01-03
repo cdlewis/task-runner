@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -105,31 +106,66 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
+// Regex patterns for $INPUT interpolation
+var (
+	// $INPUT["key"] - map key access
+	inputMapKeyRe = regexp.MustCompile(`\$INPUT\["([^"]+)"\]`)
+	// $INPUT[n:] - slice from index
+	inputSliceRe = regexp.MustCompile(`\$INPUT\[(\d+):\]`)
+	// $INPUT[n] - array index access
+	inputIndexRe = regexp.MustCompile(`\$INPUT\[(\d+)\]`)
+	// $INPUT - bare input (must be checked last)
+	inputBareRe = regexp.MustCompile(`\$INPUT\b`)
+)
+
 // InterpolatePrompt replaces template variables with candidate values.
-// Supports: $ARGUMENT, $ARGUMENT_1, $ARGUMENT_2, ..., $REMAINING_ARGUMENTS
+// Supports: $INPUT, $INPUT[n], $INPUT[n:], $INPUT["key"]
 func InterpolatePrompt(template string, candidate *Candidate) string {
 	result := template
 
-	// $ARGUMENT_N for each element (1-indexed)
-	// Must be replaced BEFORE $ARGUMENT to avoid partial matches
-	for i, elem := range candidate.Elements {
-		placeholder := fmt.Sprintf("$ARGUMENT_%d", i+1)
-		result = strings.ReplaceAll(result, placeholder, elem)
-	}
+	// Replace $INPUT["key"] - map key access
+	result = inputMapKeyRe.ReplaceAllStringFunc(result, func(match string) string {
+		submatch := inputMapKeyRe.FindStringSubmatch(match)
+		if len(submatch) < 2 {
+			return match
+		}
+		key := submatch[1]
+		if val, ok := candidate.GetKey(key); ok {
+			return val
+		}
+		return ""
+	})
 
-	// $ARGUMENT is the first element (same as $ARGUMENT_1)
-	// Replaced after $ARGUMENT_N to avoid corrupting $ARGUMENT_1, $ARGUMENT_2, etc.
-	if len(candidate.Elements) > 0 {
-		result = strings.ReplaceAll(result, "$ARGUMENT", candidate.Elements[0])
-	}
+	// Replace $INPUT[n:] - slice from index
+	result = inputSliceRe.ReplaceAllStringFunc(result, func(match string) string {
+		submatch := inputSliceRe.FindStringSubmatch(match)
+		if len(submatch) < 2 {
+			return match
+		}
+		idx, _ := strconv.Atoi(submatch[1])
+		if val, ok := candidate.GetSlice(idx); ok {
+			return val
+		}
+		return "[]"
+	})
 
-	// $REMAINING_ARGUMENTS is elements 2+ joined by comma
-	if len(candidate.Elements) > 1 {
-		remaining := strings.Join(candidate.Elements[1:], ", ")
-		result = strings.ReplaceAll(result, "$REMAINING_ARGUMENTS", remaining)
-	} else {
-		result = strings.ReplaceAll(result, "$REMAINING_ARGUMENTS", "")
-	}
+	// Replace $INPUT[n] - array index access
+	result = inputIndexRe.ReplaceAllStringFunc(result, func(match string) string {
+		submatch := inputIndexRe.FindStringSubmatch(match)
+		if len(submatch) < 2 {
+			return match
+		}
+		idx, _ := strconv.Atoi(submatch[1])
+		if val, ok := candidate.GetIndex(idx); ok {
+			return val
+		}
+		return ""
+	})
+
+	// Replace bare $INPUT - whole value (with single-item unwrap)
+	result = inputBareRe.ReplaceAllStringFunc(result, func(match string) string {
+		return candidate.String()
+	})
 
 	return result
 }

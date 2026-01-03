@@ -49,7 +49,7 @@ verify_command: "cargo check"                 # Verify build after fix
 
 ```yaml
 candidate_source: "cargo check 2>&1 | grep error"    # Command to find candidates
-prompt: "Fix this issue: $ARGUMENT"        # Prompt text (or use template)
+prompt: "Fix this issue: $INPUT"          # Prompt text (or use template)
 template: "template.txt"                   # Load prompt from file instead
 claude_flags: "--fast"                     # Optional Claude CLI flags
 accept_best_effort: false                  # Accept partial fixes
@@ -102,22 +102,52 @@ task-runner mytask --odds    # Process candidates with odd MD5 hash
 
 ## Prompt Templates
 
-Templates support variable interpolation:
+Templates support `$INPUT` variable interpolation for accessing candidate data:
 
-| Variable | Description |
-|----------|-------------|
-| `$ARGUMENT` | First element of candidate |
-| `$ARGUMENT_1`, `$ARGUMENT_2`, ... | Specific elements |
-| `$REMAINING_ARGUMENTS` | Elements 2+ joined by comma |
-| `$CANDIDATE` | Full candidate key (in commands) |
+| Syntax | Description | Example |
+|--------|-------------|---------|
+| `$INPUT` | Whole input (single items unwrapped) | `"file.go"` or `["a","b"]` |
+| `$INPUT[0]` | Array index (0-based) | First element |
+| `$INPUT[1]` | Array index | Second element |
+| `$INPUT[1:]` | Slice from index to end | `["b","c","d"]` |
+| `$INPUT["key"]` | Map key lookup | Value for key |
+
+**Special cases:**
+- Single-item arrays are unwrapped: `$INPUT` on `["x"]` returns `"x"`
+- Out of bounds index returns empty string
+- Missing map key returns empty string
+
+**In commands** (success_command, etc.):
+- `$CANDIDATE` - Full candidate key (JSON serialization)
+- `$TASK_NAME` - Current task name
 
 ### Candidate Format
 
-Candidates can be simple strings or arrays:
+Candidate sources must output JSON. Each candidate can be:
+
+**Strings** (simple case):
+```json
+["file1.go", "file2.go", "file3.go"]
 ```
-simple_issue
-["issue_key", "related_info", "more_context"]
+
+**Arrays** (multiple values per candidate):
+```json
+[["file.go", "10", "error message"], ["other.go", "20", "warning"]]
 ```
+Access with `$INPUT[0]`, `$INPUT[1]`, `$INPUT[1:]`
+
+**Maps** (named fields):
+```json
+[{"file": "test.go", "line": 10, "type": "error"}]
+```
+Access with `$INPUT["file"]`, `$INPUT["line"]`
+
+### Candidate Keys
+
+Each candidate has a unique key used for tracking in `ignored.log`:
+- **Strings**: The string itself (`file.go`)
+- **Arrays**: JSON serialization (`["file.go","10"]`)
+- **Maps**: JSON serialization (`{"file":"test.go","line":10}`)
 
 ## Generated Files
 
@@ -129,7 +159,8 @@ Each task directory will contain auto-generated files:
 ## Controls
 
 - Press `Ctrl+\` (SIGQUIT) to gracefully stop after the current iteration
-- After 3 consecutive failures, the tool sleeps for 5 minutes before retrying
+- Exponential backoff on consecutive failures (5min → 10min → 20min → 40min → 1hr max)
+- Rate limit detection ("You've hit your limit") triggers immediate 1-hour backoff
 
 ## License
 

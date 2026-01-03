@@ -30,14 +30,14 @@ func main() {
 
 	// Validate mutually exclusive flags
 	if *evensFlag && *oddsFlag {
-		fmt.Fprintln(os.Stderr, "Error: --evens and --odds are mutually exclusive")
+		fmt.Fprintln(os.Stderr, ColorError("Error: --evens and --odds are mutually exclusive"))
 		os.Exit(1)
 	}
 
 	// Discover environment
 	env, err := DiscoverEnvironment()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintln(os.Stderr, ColorError(fmt.Sprintf("Error: %v", err)))
 		os.Exit(1)
 	}
 
@@ -50,7 +50,7 @@ func main() {
 	// Get task name from positional args
 	remaining := flag.Args()
 	if len(remaining) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: task name required")
+		fmt.Fprintln(os.Stderr, ColorError("Error: task name required"))
 		fmt.Fprintln(os.Stderr, "Use --list to see available tasks")
 		os.Exit(1)
 	}
@@ -75,12 +75,12 @@ func main() {
 
 	runner, err := NewRunner(env, taskName, opts)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintln(os.Stderr, ColorError(fmt.Sprintf("Error: %v", err)))
 		os.Exit(1)
 	}
 
 	if err := runner.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintln(os.Stderr, ColorError(fmt.Sprintf("Error: %v", err)))
 		os.Exit(1)
 	}
 }
@@ -91,7 +91,7 @@ func listTasks(env *Environment) {
 		return
 	}
 
-	fmt.Println("Available tasks:")
+	fmt.Println(ColorBold("Available tasks:"))
 
 	// Sort task names for consistent output
 	names := make([]string, 0, len(env.Tasks))
@@ -106,7 +106,7 @@ func listTasks(env *Environment) {
 		if task.AcceptBestEffort {
 			mode = "best-effort"
 		}
-		fmt.Printf("  %-30s [%s]\n", name, mode)
+		fmt.Printf("  %s [%s]\n", ColorInfo(fmt.Sprintf("%-30s", name)), mode)
 	}
 }
 

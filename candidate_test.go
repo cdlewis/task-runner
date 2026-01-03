@@ -10,47 +10,37 @@ func TestParseCandidates(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
-		expected    []Candidate
+		expectedKey []string // Expected Key for each candidate
 		expectError bool
 	}{
 		{
-			name:  "simple string array",
-			input: `["file1.go", "file2.go", "file3.go"]`,
-			expected: []Candidate{
-				{Key: "file1.go", Elements: []string{"file1.go"}},
-				{Key: "file2.go", Elements: []string{"file2.go"}},
-				{Key: "file3.go", Elements: []string{"file3.go"}},
-			},
+			name:        "simple string array",
+			input:       `["file1.go", "file2.go", "file3.go"]`,
+			expectedKey: []string{"file1.go", "file2.go", "file3.go"},
 		},
 		{
-			name:  "array of arrays",
-			input: `[["file1.go", "line 10"], ["file2.go", "line 20"]]`,
-			expected: []Candidate{
-				{Key: "file1.go", Elements: []string{"file1.go", "line 10"}},
-				{Key: "file2.go", Elements: []string{"file2.go", "line 20"}},
-			},
+			name:        "array of arrays",
+			input:       `[["file1.go", "line 10"], ["file2.go", "line 20"]]`,
+			expectedKey: []string{`["file1.go","line 10"]`, `["file2.go","line 20"]`},
 		},
 		{
-			name:  "mixed format",
-			input: `["simple.go", ["complex.go", "extra", "data"]]`,
-			expected: []Candidate{
-				{Key: "simple.go", Elements: []string{"simple.go"}},
-				{Key: "complex.go", Elements: []string{"complex.go", "extra", "data"}},
-			},
+			name:        "array of maps",
+			input:       `[{"file": "test.go", "line": 10}, {"file": "other.go"}]`,
+			expectedKey: []string{`{"file":"test.go","line":10}`, `{"file":"other.go"}`},
 		},
 		{
-			name:     "empty array",
-			input:    `[]`,
-			expected: []Candidate{},
+			name:        "mixed strings and arrays",
+			input:       `["simple.go", ["complex.go", "extra"]]`,
+			expectedKey: []string{"simple.go", `["complex.go","extra"]`},
+		},
+		{
+			name:        "empty array",
+			input:       `[]`,
+			expectedKey: []string{},
 		},
 		{
 			name:        "invalid JSON",
 			input:       `not json`,
-			expectError: true,
-		},
-		{
-			name:        "invalid element type",
-			input:       `[123, 456]`,
 			expectError: true,
 		},
 	}
@@ -67,24 +57,122 @@ func TestParseCandidates(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if len(result) != len(tt.expected) {
-				t.Fatalf("got %d candidates, want %d", len(result), len(tt.expected))
+			if len(result) != len(tt.expectedKey) {
+				t.Fatalf("got %d candidates, want %d", len(result), len(tt.expectedKey))
 			}
 			for i, c := range result {
-				if c.Key != tt.expected[i].Key {
-					t.Errorf("candidate[%d].Key = %q, want %q", i, c.Key, tt.expected[i].Key)
-				}
-				if len(c.Elements) != len(tt.expected[i].Elements) {
-					t.Errorf("candidate[%d].Elements length = %d, want %d", i, len(c.Elements), len(tt.expected[i].Elements))
-				}
-				for j, elem := range c.Elements {
-					if elem != tt.expected[i].Elements[j] {
-						t.Errorf("candidate[%d].Elements[%d] = %q, want %q", i, j, elem, tt.expected[i].Elements[j])
-					}
+				if c.Key != tt.expectedKey[i] {
+					t.Errorf("candidate[%d].Key = %q, want %q", i, c.Key, tt.expectedKey[i])
 				}
 			}
 		})
 	}
+}
+
+func TestCandidateAccessors(t *testing.T) {
+	t.Run("string candidate", func(t *testing.T) {
+		candidates, _ := ParseCandidates([]byte(`["hello"]`))
+		c := &candidates[0]
+
+		if !c.IsString() {
+			t.Error("expected IsString() to be true")
+		}
+		if c.IsArray() {
+			t.Error("expected IsArray() to be false")
+		}
+		if c.IsMap() {
+			t.Error("expected IsMap() to be false")
+		}
+		if c.String() != "hello" {
+			t.Errorf("String() = %q, want %q", c.String(), "hello")
+		}
+	})
+
+	t.Run("array candidate - GetIndex", func(t *testing.T) {
+		candidates, _ := ParseCandidates([]byte(`[["a", "b", "c"]]`))
+		c := &candidates[0]
+
+		if !c.IsArray() {
+			t.Error("expected IsArray() to be true")
+		}
+
+		val, ok := c.GetIndex(0)
+		if !ok || val != "a" {
+			t.Errorf("GetIndex(0) = %q, %v; want 'a', true", val, ok)
+		}
+
+		val, ok = c.GetIndex(1)
+		if !ok || val != "b" {
+			t.Errorf("GetIndex(1) = %q, %v; want 'b', true", val, ok)
+		}
+
+		val, ok = c.GetIndex(10)
+		if ok {
+			t.Error("GetIndex(10) should return false for out of bounds")
+		}
+	})
+
+	t.Run("array candidate - GetSlice", func(t *testing.T) {
+		candidates, _ := ParseCandidates([]byte(`[["a", "b", "c", "d"]]`))
+		c := &candidates[0]
+
+		val, ok := c.GetSlice(1)
+		if !ok || val != `["b","c","d"]` {
+			t.Errorf("GetSlice(1) = %q, %v; want '[\"b\",\"c\",\"d\"]', true", val, ok)
+		}
+
+		val, ok = c.GetSlice(3)
+		if !ok || val != `["d"]` {
+			t.Errorf("GetSlice(3) = %q, %v; want '[\"d\"]', true", val, ok)
+		}
+
+		val, ok = c.GetSlice(10)
+		if !ok || val != "[]" {
+			t.Errorf("GetSlice(10) = %q, %v; want '[]', true", val, ok)
+		}
+	})
+
+	t.Run("map candidate - GetKey", func(t *testing.T) {
+		candidates, _ := ParseCandidates([]byte(`[{"file": "test.go", "line": 42}]`))
+		c := &candidates[0]
+
+		if !c.IsMap() {
+			t.Error("expected IsMap() to be true")
+		}
+
+		val, ok := c.GetKey("file")
+		if !ok || val != "test.go" {
+			t.Errorf("GetKey('file') = %q, %v; want 'test.go', true", val, ok)
+		}
+
+		val, ok = c.GetKey("line")
+		if !ok || val != "42" {
+			t.Errorf("GetKey('line') = %q, %v; want '42', true", val, ok)
+		}
+
+		val, ok = c.GetKey("missing")
+		if ok {
+			t.Error("GetKey('missing') should return false")
+		}
+	})
+
+	t.Run("String() unwraps single-item arrays", func(t *testing.T) {
+		candidates, _ := ParseCandidates([]byte(`[["only_item"]]`))
+		c := &candidates[0]
+
+		if c.String() != "only_item" {
+			t.Errorf("String() = %q, want %q", c.String(), "only_item")
+		}
+	})
+
+	t.Run("String() returns JSON for multi-item arrays", func(t *testing.T) {
+		candidates, _ := ParseCandidates([]byte(`[["a", "b"]]`))
+		c := &candidates[0]
+
+		if c.String() != `["a", "b"]` {
+			t.Errorf("String() = %q, want %q", c.String(), `["a", "b"]`)
+		}
+	})
 }
 
 func TestFilterByHash(t *testing.T) {

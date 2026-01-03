@@ -101,11 +101,11 @@ func (r *Runner) Run() error {
 	}()
 
 	// Print startup info
-	fmt.Printf("Task: %s\n", r.task.Name)
+	fmt.Printf("%s %s\n", ColorBold("Task:"), r.task.Name)
 	if r.claudeLogger != nil {
-		fmt.Printf("Logs: %s\n", r.claudeLogger.Path())
+		fmt.Printf("%s %s\n", ColorBold("Logs:"), r.claudeLogger.Path())
 	}
-	fmt.Printf("Mode: %s\n", r.modeString())
+	fmt.Printf("%s %s\n", ColorBold("Mode:"), r.modeString())
 	fmt.Println()
 
 	iteration := 0
@@ -121,21 +121,21 @@ func (r *Runner) Run() error {
 		}
 
 		iteration++
-		fmt.Printf("\n=== Iteration %d (%s) ===\n", iteration, time.Now().Format("15:04:05"))
+		fmt.Print(IterationBanner(iteration, time.Now().Format("15:04:05")))
 
 		done, err := r.runIteration()
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			fmt.Println(ColorError(fmt.Sprintf("Error: %v", err)))
 
 			// Check if it's a rate limit error
 			if _, isRateLimit := err.(*rateLimitError); isRateLimit {
-				fmt.Printf("Rate limit hit, sleeping for %s...\n", rateLimitBackoff)
+				fmt.Println(ColorWarning(fmt.Sprintf("Rate limit hit, sleeping for %s...", rateLimitBackoff)))
 				time.Sleep(rateLimitBackoff)
 				r.backoffLevel = 0
 			} else {
 				// Exponential backoff for other errors
 				backoff := calculateBackoff(r.backoffLevel)
-				fmt.Printf("Sleeping for %s (backoff level %d)...\n", backoff, r.backoffLevel)
+				fmt.Println(ColorWarning(fmt.Sprintf("Sleeping for %s (backoff level %d)...", backoff, r.backoffLevel)))
 				time.Sleep(backoff)
 				r.backoffLevel++
 			}
@@ -159,7 +159,7 @@ func (r *Runner) Run() error {
 
 func (r *Runner) runIteration() (done bool, err error) {
 	// Run candidate source to get candidates
-	fmt.Println("Running candidate source...")
+	fmt.Println(ColorInfo("Running candidate source..."))
 	output, err := RunCandidateSource(r.task.CandidateSource, r.env.ProjectDir)
 	if err != nil {
 		return false, fmt.Errorf("candidate source failed: %w", err)
@@ -207,7 +207,7 @@ func (r *Runner) runIteration() (done bool, err error) {
 	}
 
 	// Run Claude
-	fmt.Println("Running Claude...")
+	fmt.Println(ColorInfo("Running Claude..."))
 	if r.claudeLogger != nil {
 		r.claudeLogger.StartEntry(prompt)
 	}
@@ -229,7 +229,7 @@ func (r *Runner) runIteration() (done bool, err error) {
 	}
 
 	// Re-run candidate source to check if candidate was fixed
-	fmt.Println("Re-checking candidates...")
+	fmt.Println(ColorInfo("Re-checking candidates..."))
 	output, err = RunCandidateSource(r.task.CandidateSource, r.env.ProjectDir)
 	if err != nil {
 		return false, fmt.Errorf("candidate source re-run failed: %w", err)
@@ -250,11 +250,11 @@ func (r *Runner) runIteration() (done bool, err error) {
 }
 
 func (r *Runner) handleSuccess(candidate *Candidate) (bool, error) {
-	fmt.Printf("✓ Candidate %s was fixed!\n", candidate.Key)
+	fmt.Println(ColorSuccess(fmt.Sprintf("✓ Candidate %s was fixed!", candidate.Key)))
 
 	// Verify build
 	if !r.runVerify() {
-		fmt.Println("Build verification failed after fix, attempting recovery...")
+		fmt.Println(ColorWarning("Build verification failed after fix, attempting recovery..."))
 		if !r.runReset() {
 			return false, fmt.Errorf("failed to reset after build failure")
 		}
@@ -283,7 +283,7 @@ func (r *Runner) handleSuccess(candidate *Candidate) (bool, error) {
 			return false, fmt.Errorf("success command error: %w", err)
 		}
 		if !ok {
-			fmt.Println("Warning: success command returned non-zero exit code")
+			fmt.Println(ColorWarning("Warning: success command returned non-zero exit code"))
 		}
 		r.logOutcome(OutcomeFixed, "committed")
 	} else {
@@ -294,7 +294,7 @@ func (r *Runner) handleSuccess(candidate *Candidate) (bool, error) {
 }
 
 func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
-	fmt.Printf("✗ Candidate %s not fixed.\n", candidate.Key)
+	fmt.Println(ColorError(fmt.Sprintf("✗ Candidate %s not fixed.", candidate.Key)))
 
 	if r.task.AcceptBestEffort {
 		// Best effort mode: commit if build passes
@@ -314,7 +314,7 @@ func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
 					return false, fmt.Errorf("best effort commit error: %w", err)
 				}
 				if !ok {
-					fmt.Println("Warning: best effort commit returned non-zero exit code")
+					fmt.Println(ColorWarning("Warning: best effort commit returned non-zero exit code"))
 				}
 				r.logOutcome(OutcomeBestEffort, "partial progress committed")
 			} else {
@@ -322,7 +322,7 @@ func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
 			}
 		} else {
 			// Build failed, reset
-			fmt.Println("Build failed, resetting...")
+			fmt.Println(ColorWarning("Build failed, resetting..."))
 			if !r.runReset() {
 				return false, fmt.Errorf("failed to reset")
 			}
@@ -333,7 +333,7 @@ func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
 		}
 	} else {
 		// Standard mode: reset changes
-		fmt.Println("Resetting changes...")
+		fmt.Println(ColorInfo("Resetting changes..."))
 		if !r.runReset() {
 			return false, fmt.Errorf("failed to reset")
 		}
@@ -372,10 +372,10 @@ func (r *Runner) runVerify() bool {
 	if r.env.Config.VerifyCommand == "" {
 		return true
 	}
-	fmt.Println("Verifying build...")
+	fmt.Println(ColorInfo("Verifying build..."))
 	ok, err := RunCommand(r.env.Config.VerifyCommand, r.env.ProjectDir)
 	if err != nil {
-		fmt.Printf("Verify command error: %v\n", err)
+		fmt.Println(ColorError(fmt.Sprintf("Verify command error: %v", err)))
 		return false
 	}
 	return ok
@@ -385,10 +385,10 @@ func (r *Runner) runReset() bool {
 	if r.env.Config.ResetCommand == "" {
 		return true
 	}
-	fmt.Println("Running reset...")
+	fmt.Println(ColorInfo("Running reset..."))
 	ok, err := RunCommandSilent(r.env.Config.ResetCommand, r.env.ProjectDir)
 	if err != nil {
-		fmt.Printf("Reset command error: %v\n", err)
+		fmt.Println(ColorError(fmt.Sprintf("Reset command error: %v", err)))
 		return false
 	}
 	return ok

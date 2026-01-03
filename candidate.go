@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -12,10 +13,10 @@ import (
 )
 
 // Candidate represents a work item from the candidate source output.
-// It can be a single string or an array of strings (first element is the key).
+// It can be a string, array, or map - stored as raw JSON for flexible access.
 type Candidate struct {
-	Key      string
-	Elements []string
+	Key  string          // JSON serialization of the full candidate (for uniqueness)
+	Data json.RawMessage // Raw JSON data (string, array, or map)
 }
 
 type HashFilter int
@@ -27,7 +28,7 @@ const (
 )
 
 // ParseCandidates parses the JSON output from a candidate source.
-// Supports both ["a", "b"] and [["a", "related"], ["b", "related"]] formats.
+// Supports: ["a", "b"], [["a", "x"], ["b", "y"]], or [{"file": "a"}, {"file": "b"}]
 func ParseCandidates(jsonData []byte) ([]Candidate, error) {
 	var raw []json.RawMessage
 	if err := json.Unmarshal(jsonData, &raw); err != nil {
@@ -36,33 +37,139 @@ func ParseCandidates(jsonData []byte) ([]Candidate, error) {
 
 	candidates := make([]Candidate, 0, len(raw))
 	for _, item := range raw {
-		// Try parsing as string first
+		// Compact the JSON for consistent key generation
+		var buf bytes.Buffer
+		if err := json.Compact(&buf, item); err != nil {
+			return nil, fmt.Errorf("failed to compact JSON: %w", err)
+		}
+
+		key := buf.String()
+
+		// For simple strings, use the unquoted value as the key
 		var str string
 		if err := json.Unmarshal(item, &str); err == nil {
-			candidates = append(candidates, Candidate{
-				Key:      str,
-				Elements: []string{str},
-			})
-			continue
+			key = str
 		}
 
-		// Try parsing as array of strings
-		var arr []string
-		if err := json.Unmarshal(item, &arr); err == nil {
-			if len(arr) == 0 {
-				continue
-			}
-			candidates = append(candidates, Candidate{
-				Key:      arr[0],
-				Elements: arr,
-			})
-			continue
-		}
-
-		return nil, fmt.Errorf("candidate must be string or array of strings")
+		candidates = append(candidates, Candidate{
+			Key:  key,
+			Data: item,
+		})
 	}
 
 	return candidates, nil
+}
+
+// IsArray returns true if the candidate data is a JSON array.
+func (c *Candidate) IsArray() bool {
+	return len(c.Data) > 0 && c.Data[0] == '['
+}
+
+// IsMap returns true if the candidate data is a JSON object.
+func (c *Candidate) IsMap() bool {
+	return len(c.Data) > 0 && c.Data[0] == '{'
+}
+
+// IsString returns true if the candidate data is a JSON string.
+func (c *Candidate) IsString() bool {
+	return len(c.Data) > 0 && c.Data[0] == '"'
+}
+
+// GetIndex returns the element at the given index (0-based) for array candidates.
+// Returns the value as a string (JSON-serialized if not a string type).
+func (c *Candidate) GetIndex(i int) (string, bool) {
+	if !c.IsArray() {
+		return "", false
+	}
+
+	var arr []json.RawMessage
+	if err := json.Unmarshal(c.Data, &arr); err != nil {
+		return "", false
+	}
+
+	if i < 0 || i >= len(arr) {
+		return "", false
+	}
+
+	return rawToString(arr[i]), true
+}
+
+// GetSlice returns elements from the given index to the end as a JSON array.
+func (c *Candidate) GetSlice(start int) (string, bool) {
+	if !c.IsArray() {
+		return "", false
+	}
+
+	var arr []json.RawMessage
+	if err := json.Unmarshal(c.Data, &arr); err != nil {
+		return "", false
+	}
+
+	if start < 0 || start >= len(arr) {
+		return "[]", true
+	}
+
+	slice := arr[start:]
+	result, err := json.Marshal(slice)
+	if err != nil {
+		return "", false
+	}
+
+	return string(result), true
+}
+
+// GetKey returns the value for the given key in a map candidate.
+// Returns the value as a string (JSON-serialized if not a string type).
+func (c *Candidate) GetKey(key string) (string, bool) {
+	if !c.IsMap() {
+		return "", false
+	}
+
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(c.Data, &m); err != nil {
+		return "", false
+	}
+
+	val, ok := m[key]
+	if !ok {
+		return "", false
+	}
+
+	return rawToString(val), true
+}
+
+// String returns the candidate data as a string.
+// Single-item arrays are unwrapped for convenience.
+func (c *Candidate) String() string {
+	// For strings, return the unquoted value
+	if c.IsString() {
+		var str string
+		if err := json.Unmarshal(c.Data, &str); err == nil {
+			return str
+		}
+	}
+
+	// For single-item arrays, unwrap and return the item
+	if c.IsArray() {
+		var arr []json.RawMessage
+		if err := json.Unmarshal(c.Data, &arr); err == nil && len(arr) == 1 {
+			return rawToString(arr[0])
+		}
+	}
+
+	// Otherwise return the full JSON
+	return string(c.Data)
+}
+
+// rawToString converts a json.RawMessage to a string.
+// If it's a JSON string, returns the unquoted value.
+// Otherwise returns the JSON representation.
+func rawToString(raw json.RawMessage) string {
+	var str string
+	if err := json.Unmarshal(raw, &str); err == nil {
+		return str
+	}
+	return string(raw)
 }
 
 // FilterByHash filters candidates by MD5 hash parity.
