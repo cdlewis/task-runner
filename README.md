@@ -5,6 +5,12 @@ A Go CLI tool that automates iterative code improvements using Claude AI. It ide
 ## Installation
 
 ```bash
+go build -o bin/task-runner
+```
+
+Or build to the current directory:
+
+```bash
 go build
 ```
 
