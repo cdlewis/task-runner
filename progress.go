@@ -71,6 +71,9 @@ func NewProgressTimer(label string, stats *SessionStats) *ProgressTimer {
 func (p *ProgressTimer) Start() {
 	p.startTime = time.Now()
 
+	// Hide cursor
+	fmt.Fprint(os.Stdout, "\033[?25l")
+
 	go func() {
 		defer close(p.doneCh)
 		ticker := time.NewTicker(1 * time.Second)
@@ -102,10 +105,8 @@ func (p *ProgressTimer) printProgress() {
 		timerPart = fmt.Sprintf("(%s)", formatDuration(elapsed))
 	}
 
-	line := fmt.Sprintf("\r%s %s", ColorInfo(p.label), ColorDim(timerPart))
-
-	// Pad with spaces to clear any previous longer line
-	fmt.Fprintf(os.Stdout, "%-80s", line)
+	// \r moves to start of line, \033[K clears to end of line
+	fmt.Fprintf(os.Stdout, "\r%s %s\033[K", ColorInfo(p.label), ColorDim(timerPart))
 }
 
 // Stop stops the timer and records the duration. Returns the elapsed duration.
@@ -116,8 +117,8 @@ func (p *ProgressTimer) Stop() time.Duration {
 	duration := time.Since(p.startTime)
 	p.stats.Add(duration)
 
-	// Clear the line and print newline
-	fmt.Fprintf(os.Stdout, "\r%-80s\r", "")
+	// Clear the line and show cursor
+	fmt.Fprintf(os.Stdout, "\r\033[K\033[?25h")
 
 	return duration
 }
