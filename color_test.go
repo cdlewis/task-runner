@@ -57,14 +57,19 @@ func TestGradient(t *testing.T) {
 func TestIterationBanner(t *testing.T) {
 	result := IterationBanner(1, "14:30:05")
 
-	// Should contain iteration number (note: gradient adds color codes between chars)
-	if !strings.Contains(result, "I") || !strings.Contains(result, "t") {
-		t.Error("Banner should contain 'Iteration' text")
+	// Should contain iteration text with sparkles
+	if !strings.Contains(result, "Iteration 1") {
+		t.Error("Banner should contain 'Iteration 1' text")
 	}
 
-	// Should contain time digits (gradient splits them with color codes)
-	if !strings.Contains(result, "1") || !strings.Contains(result, "4") || !strings.Contains(result, "3") {
-		t.Error("Banner should contain time digits")
+	// Should contain sparkles
+	if !strings.Contains(result, "✦") {
+		t.Error("Banner should contain sparkle decorations")
+	}
+
+	// Should contain time
+	if !strings.Contains(result, "14:30:05") {
+		t.Error("Banner should contain time")
 	}
 
 	// Should contain box-drawing characters
@@ -77,8 +82,66 @@ func TestIterationBanner(t *testing.T) {
 		t.Error("Banner should start with newline")
 	}
 
-	// Should contain color codes (from gradient)
-	if !strings.Contains(result, "\033[") {
-		t.Error("Banner should contain ANSI color codes")
+	// Should contain cyan color code for border
+	if !strings.Contains(result, colorCyan) {
+		t.Error("Banner should contain cyan color for border")
+	}
+
+	// Should contain bold code for text
+	if !strings.Contains(result, colorBold) {
+		t.Error("Banner should contain bold formatting for text")
+	}
+}
+
+func TestStartupBanner(t *testing.T) {
+	result := StartupBanner("my-task", "/path/to/logs", "standard")
+
+	// Should contain task name with label
+	if !strings.Contains(result, "Task: my-task") {
+		t.Error("Startup banner should contain 'Task: my-task'")
+	}
+
+	// Should contain mode with label
+	if !strings.Contains(result, "Mode: standard") {
+		t.Error("Startup banner should contain 'Mode: standard'")
+	}
+
+	// Should contain log path with label
+	if !strings.Contains(result, "Logs: /path/to/logs") {
+		t.Error("Startup banner should contain 'Logs: /path/to/logs'")
+	}
+
+	// Should contain bold "Task Runner"
+	if !strings.Contains(result, colorBold+"Task Runner") {
+		t.Error("Startup banner should contain bold 'Task Runner'")
+	}
+
+	// Should contain cat ASCII art elements
+	if !strings.Contains(result, "フ") || !strings.Contains(result, "ミ") {
+		t.Error("Startup banner should contain cat ASCII art")
+	}
+
+	// Should contain cyan color
+	if !strings.Contains(result, colorCyan) {
+		t.Error("Startup banner should use cyan color for cat")
+	}
+}
+
+func TestStartupBannerDryRun(t *testing.T) {
+	result := StartupBanner("my-task", "/path/to/claude.log", "dry-run")
+
+	// Should contain task name
+	if !strings.Contains(result, "my-task") {
+		t.Error("Startup banner should contain task name")
+	}
+
+	// Should contain logs path even in dry-run
+	if !strings.Contains(result, "Logs:") || !strings.Contains(result, "claude.log") {
+		t.Error("Startup banner should show log path in dry-run mode")
+	}
+
+	// Should show dry-run mode
+	if !strings.Contains(result, "dry-run") {
+		t.Error("Startup banner should show dry-run mode")
 	}
 }

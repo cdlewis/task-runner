@@ -100,13 +100,14 @@ func (r *Runner) Run() error {
 		r.stopRequested = true
 	}()
 
-	// Print startup info
-	fmt.Printf("%s %s\n", ColorBold("Task:"), r.task.Name)
-	if r.claudeLogger != nil {
-		fmt.Printf("%s %s\n", ColorBold("Logs:"), r.claudeLogger.Path())
+	// Print startup banner with cat
+	logPath := filepath.Join(r.task.Dir, "claude.log")
+	if cwd, err := os.Getwd(); err == nil {
+		if rel, err := filepath.Rel(cwd, logPath); err == nil {
+			logPath = rel
+		}
 	}
-	fmt.Printf("%s %s\n", ColorBold("Mode:"), r.modeString())
-	fmt.Println()
+	fmt.Print(StartupBanner(r.task.Name, logPath, r.modeString()))
 
 	iteration := 0
 	for {

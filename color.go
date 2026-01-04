@@ -73,7 +73,7 @@ func Gradient(text string) string {
 
 // IterationBanner creates a colorful banner for iteration headers
 func IterationBanner(n int, timeStr string) string {
-	content := fmt.Sprintf(" Iteration %d (%s) ", n, timeStr)
+	content := fmt.Sprintf("✦ Iteration %d (%s) ✦", n, timeStr)
 
 	// Calculate padding for centering
 	totalWidth := 40
@@ -83,12 +83,96 @@ func IterationBanner(n int, timeStr string) string {
 
 	// Build the banner with Unicode box-drawing characters
 	top := "╔" + strings.Repeat("═", totalWidth-2) + "╗"
-	middle := "║" + strings.Repeat(" ", leftPad) + content + strings.Repeat(" ", rightPad) + "║"
 	bottom := "╚" + strings.Repeat("═", totalWidth-2) + "╝"
 
-	// Apply gradient to the entire banner
-	return fmt.Sprintf("\n%s\n%s\n%s\n",
-		Gradient(top),
-		Gradient(middle),
-		Gradient(bottom))
+	// Cyan border, bold white text
+	middleFormatted := colorCyan + "║" + colorReset +
+		strings.Repeat(" ", leftPad) +
+		colorBold + content + colorReset +
+		strings.Repeat(" ", rightPad) +
+		colorCyan + "║" + colorReset
+
+	return fmt.Sprintf("\n%s%s%s\n%s\n%s%s%s\n",
+		colorCyan, top, colorReset,
+		middleFormatted,
+		colorCyan, bottom, colorReset)
+}
+
+// displayWidth calculates the visual width of a string
+// Full-width characters (CJK, full-width punctuation) count as 2 columns
+func displayWidth(s string) int {
+	width := 0
+	for _, r := range s {
+		if r >= 0x1100 && // Korean Hangul
+			(r <= 0x115F || // Hangul Jamo
+				(r >= 0x2E80 && r <= 0x9FFF) || // CJK
+				(r >= 0xAC00 && r <= 0xD7A3) || // Hangul Syllables
+				(r >= 0xF900 && r <= 0xFAFF) || // CJK Compatibility
+				(r >= 0xFE10 && r <= 0xFE1F) || // Vertical forms
+				(r >= 0xFE30 && r <= 0xFE6F) || // CJK Compatibility Forms
+				(r >= 0xFF00 && r <= 0xFF60) || // Full-width forms
+				(r >= 0xFFE0 && r <= 0xFFE6)) { // Full-width symbols
+			width += 2
+		} else {
+			width += 1
+		}
+	}
+	return width
+}
+
+// StartupBanner creates the startup banner with cat ASCII art
+func StartupBanner(taskName, logPath, mode string) string {
+	cat := []string{
+		"　　　　　   __",
+		"　　　　 ／フ   フ",
+		"　　　　|  .   .|",
+		"　 　　／`ミ__xノ",
+		"　 　 /　　 　 |",
+		"　　 /　 ヽ　　ﾉ",
+		" 　 │　　 | | |",
+		"／￣|　　 | | |",
+		"| (￣ヽ_ヽ)_)__)",
+		"＼二つ",
+	}
+
+	// Find the widest line
+	maxWidth := 0
+	for _, line := range cat {
+		if w := displayWidth(line); w > maxWidth {
+			maxWidth = w
+		}
+	}
+
+	// Build labels map: line index -> label
+	labels := map[int]string{
+		2: ColorBold("Task Runner"),
+		// line 3 is empty
+		4: "Task: " + taskName,
+		5: "Logs: " + logPath,
+		6: "Mode: " + mode,
+	}
+
+	// Remove logs line if no path provided
+	if logPath == "" {
+		delete(labels, 5)
+	}
+
+	var result strings.Builder
+	result.WriteString("\n")
+
+	for i, line := range cat {
+		result.WriteString(colorCyan)
+		result.WriteString(line)
+		result.WriteString(colorReset)
+
+		if label, ok := labels[i]; ok {
+			// Pad to align labels
+			padding := maxWidth - displayWidth(line) + 3
+			result.WriteString(strings.Repeat(" ", padding))
+			result.WriteString(label)
+		}
+		result.WriteString("\n")
+	}
+
+	return result.String()
 }

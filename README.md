@@ -175,6 +175,10 @@ Each task directory will contain auto-generated files:
 - Exponential backoff on consecutive failures (5min → 10min → 20min → 40min → 1hr max)
 - Rate limit detection ("You've hit your limit") triggers immediate 1-hour backoff
 
+## What is the cat's name?
+
+Nigel.
+
 ## License
 
 MIT
