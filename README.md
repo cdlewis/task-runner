@@ -8,13 +8,11 @@ A Go CLI tool that automates iterative code improvements using Claude AI. It ide
 go build -o bin/task-runner
 ```
 
-Or build to the current directory:
+Then add the bin directory to your path:
 
 ```bash
-go build
+export PATH="$PATH:/your/path/to/task-runner/bin"
 ```
-
-Requires Go 1.21 or later.
 
 ## Quick Start
 
