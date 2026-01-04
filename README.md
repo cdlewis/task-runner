@@ -2,7 +2,7 @@
 
 Nigel is a tool for automating iterative code improvements using Claude Code. You specify a task and a set of candidates. Nigel works through the task with appropriate success/failure handling, logging, guardrails, etc.
 
-Nigel was developed as part of my work on the [Snowboard Kids 2 Decompilation](https://github.com/cdlewis/snowboardkids2-decomp) but I have split it off into its own project so that I can use it elsewhere. It works well for me (I use it every day). Maybe it will work well for you too ¯\\(ツ)_/¯.
+Nigel was developed as part of my work on the [Snowboard Kids 2 Decompilation](https://github.com/cdlewis/snowboardkids2-decomp) but I have split it off into its own project so that I can use it elsewhere. You can still find [real-world examples](https://github.com/cdlewis/snowboardkids2-decomp/tree/main/task-runner) of Nigel in that project. It works well for me (I use it every day). Maybe it will work well for you too ¯\\_(ツ)_/¯. 
 
 ## How It Works
 
