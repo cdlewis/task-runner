@@ -302,13 +302,15 @@ func (r *Runner) handleSuccess(candidate *Candidate) (bool, error) {
 
 	if hasChanges {
 		successCmd := InterpolateCommand(r.env.Config.SuccessCommand, candidate, r.task.Name)
-		fmt.Printf("Running success command: %s\n", successCmd)
+		fmt.Println(ColorInfo("Committing changes..."))
 		ok, err := RunCommand(successCmd, r.env.ProjectDir)
 		if err != nil {
 			return false, fmt.Errorf("success command error: %w", err)
 		}
 		if !ok {
 			fmt.Println(ColorWarning("Warning: success command returned non-zero exit code"))
+		} else {
+			fmt.Println(ColorSuccess("✓ Changes committed"))
 		}
 		r.logOutcome(OutcomeFixed, "committed")
 	} else {
@@ -330,7 +332,7 @@ func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
 			}
 
 			if hasChanges {
-				fmt.Println("Best effort: committing partial progress...")
+				fmt.Println(ColorInfo("Committing partial progress..."))
 				successCmd := InterpolateCommand(r.env.Config.SuccessCommand, candidate, r.task.Name)
 				// Modify message for best effort
 				successCmd = replaceBestEffort(successCmd, candidate.Key)
@@ -340,6 +342,8 @@ func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
 				}
 				if !ok {
 					fmt.Println(ColorWarning("Warning: best effort commit returned non-zero exit code"))
+				} else {
+					fmt.Println(ColorSuccess("✓ Changes committed"))
 				}
 				r.logOutcome(OutcomeBestEffort, "partial progress committed")
 			} else {
@@ -403,6 +407,9 @@ func (r *Runner) runVerify() bool {
 		fmt.Println(ColorError(fmt.Sprintf("Verify command error: %v", err)))
 		return false
 	}
+	if ok {
+		fmt.Println(ColorSuccess("✓ Build verified"))
+	}
 	return ok
 }
 
@@ -410,11 +417,13 @@ func (r *Runner) runReset() bool {
 	if r.env.Config.ResetCommand == "" {
 		return true
 	}
-	fmt.Println(ColorInfo("Running reset..."))
 	ok, err := RunCommandSilent(r.env.Config.ResetCommand, r.env.ProjectDir)
 	if err != nil {
 		fmt.Println(ColorError(fmt.Sprintf("Reset command error: %v", err)))
 		return false
+	}
+	if ok {
+		fmt.Println(ColorSuccess("✓ Reset complete"))
 	}
 	return ok
 }
