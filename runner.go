@@ -387,7 +387,7 @@ func (r *Runner) runVerify() bool {
 		return true
 	}
 	fmt.Println(ColorInfo("Verifying build..."))
-	ok, err := RunCommand(r.env.Config.VerifyCommand, r.env.ProjectDir)
+	ok, err := RunCommandShowOnFail(r.env.Config.VerifyCommand, r.env.ProjectDir)
 	if err != nil {
 		fmt.Println(ColorError(fmt.Sprintf("Verify command error: %v", err)))
 		return false

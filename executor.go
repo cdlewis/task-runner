@@ -60,6 +60,32 @@ func RunCommandSilent(command, workDir string) (bool, error) {
 	return true, nil
 }
 
+// RunCommandShowOnFail executes a shell command, capturing output and only printing it if the command fails.
+func RunCommandShowOnFail(command, workDir string) (bool, error) {
+	cmd := exec.Command("bash", "-c", command)
+	cmd.Dir = workDir
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		if _, ok := err.(*exec.ExitError); ok {
+			// Command failed - print captured output
+			if stdout.Len() > 0 {
+				os.Stdout.Write(stdout.Bytes())
+			}
+			if stderr.Len() > 0 {
+				os.Stderr.Write(stderr.Bytes())
+			}
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // runningProcess tracks the currently running Claude process for signal forwarding
 var runningProcess *os.Process
 
