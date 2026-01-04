@@ -93,13 +93,20 @@ func (r *Runner) Run() error {
 		}
 	}
 
-	// Set up SIGQUIT handler for graceful shutdown
+	// Set up signal handlers
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGQUIT)
+	signal.Notify(sigChan, syscall.SIGQUIT, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-sigChan
-		fmt.Println("\n[Ctrl+\\] Graceful stop requested, will finish current iteration...")
-		r.stopRequested = true
+		sig := <-sigChan
+		switch sig {
+		case syscall.SIGQUIT:
+			fmt.Println("\n[Ctrl+\\] Graceful stop requested, will finish current iteration...")
+			r.stopRequested = true
+		case syscall.SIGINT, syscall.SIGTERM:
+			fmt.Println("\nInterrupted, cleaning up...")
+			KillRunningProcess()
+			os.Exit(1)
+		}
 	}()
 
 	// Print startup banner with cat
@@ -183,7 +190,7 @@ func (r *Runner) runIteration() (done bool, err error) {
 			ignoredCount++
 		}
 	}
-	fmt.Printf("Found %d candidates (%d ignored)\n", len(candidates), ignoredCount)
+	fmt.Printf("Found %d candidates (%d ignored)\n", len(candidates)-ignoredCount, ignoredCount)
 
 	// Select first non-ignored candidate
 	candidate := SelectCandidate(candidates, r.ignoredList)

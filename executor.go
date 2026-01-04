@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // RunCandidateSource executes a candidate source command and returns its stdout.
@@ -59,6 +60,17 @@ func RunCommandSilent(command, workDir string) (bool, error) {
 	return true, nil
 }
 
+// runningProcess tracks the currently running Claude process for signal forwarding
+var runningProcess *os.Process
+
+// KillRunningProcess terminates the running Claude process if any
+func KillRunningProcess() {
+	if p := runningProcess; p != nil {
+		// Kill the entire process group
+		syscall.Kill(-p.Pid, syscall.SIGTERM)
+	}
+}
+
 // RunClaudeCommand executes the Claude command with prompt, streaming output to both stdout and a log writer.
 // Returns the captured output (for rate limit detection) and any error.
 func RunClaudeCommand(claudeCmd, claudeFlags, prompt, workDir string, logWriter io.Writer) (string, error) {
@@ -79,6 +91,12 @@ func RunClaudeCommand(claudeCmd, claudeFlags, prompt, workDir string, logWriter 
 
 	cmd := exec.Command("bash", args...)
 	cmd.Dir = workDir
+	// Put child in its own process group so it doesn't receive SIGQUIT.
+	// Pdeathsig ensures child is killed if parent dies unexpectedly (Linux only).
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid:   true,
+		Pdeathsig: syscall.SIGTERM,
+	}
 
 	// Buffer to capture output for rate limit detection
 	var outputBuf bytes.Buffer
@@ -96,7 +114,14 @@ func RunClaudeCommand(claudeCmd, claudeFlags, prompt, workDir string, logWriter 
 	cmd.Stdout = multiOut
 	cmd.Stderr = multiErr
 
-	err := cmd.Run()
+	// Start the process and track it for signal forwarding
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	runningProcess = cmd.Process
+
+	err := cmd.Wait()
+	runningProcess = nil
 	return outputBuf.String(), err
 }
 
