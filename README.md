@@ -1,6 +1,25 @@
 <img src="nigel2.png" width="500">
 
-Nigel is a CLI tool that automates iterative code improvements using Claude AI. It identifies issues via custom candidate sources, sends them to Claude for fixing, verifies the results, and commits successful improvements.
+Nigel is a tool for automating iterative code improvements using Claude Code. You specify a task and a set of candidates. Nigel works through the task with appropriate success/failure handling, logging, guardrails, etc.
+
+Nigel was developed as part of my work on the [Snowboard Kids 2 Decompilation](https://github.com/cdlewis/snowboardkids2-decomp) but I have split it off into its own project so that I can use it elsewhere. It works well for me (I use it every day). Maybe it will work well for you too ¯\_(ツ)_/¯.
+
+## How It Works
+
+1. Runs your **candidate source** to identify issues to fix
+2. Selects the first unprocessed candidate
+3. Sends candidate details to Claude with your templated prompt
+4. Runs your **verify command** (e.g. `cargo check`)
+5. Checks if the candidate is still present in the source
+6. Commits successful fixes or resets on failure
+7. Repeats until done or limit reached
+
+A fix is only considered successful if the candidate disappears from the source. This can be relaxed with `accept_best_effort: true` if you want to keep partial improvements.
+
+## Requirements
+
+- Go 1.21+
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
 
 ## Installation
 
@@ -21,40 +40,28 @@ export PATH="$PATH:/your/path/to/nigel/bin"
 3. Create task directories with `task.yaml` files
 4. Run: `nigel <task-name>`
 
-## Configuration
-
-### Directory Structure
+Minimal example:
 
 ```
 project-root/
 ├── nigel/
-│   ├── config.yaml           # Global configuration
-│   └── mytask/               # Task directory
-│       ├── task.yaml         # Task definition
-│       └── template.txt      # Optional prompt template
+│   ├── config.yaml
+│   └── fix-errors/
+│       └── task.yaml
 ```
 
-### config.yaml (Global)
-
+**config.yaml:**
 ```yaml
-# Path to Claude CLI, you can find this by running `claude doctor`
 claude_command: "~/.claude/local/node_modules/.bin/claude"
-# Run on successful fix (candidate no longer returned from candidate source)
-success_command: "git commit -m 'Fix: $CANDIDATE'"
-# Reset changes on failure (candidate still present)
-reset_command: "git reset --hard"
-# Verify build after fix, such as by linting or running unit tests
 verify_command: "cargo check"
+success_command: "git commit -m 'Fix: $CANDIDATE'"
+reset_command: "git reset --hard"
 ```
 
-### task.yaml (Per-Task)
-
+**fix-errors/task.yaml:**
 ```yaml
-candidate_source: "cargo check 2>&1 | grep error" # Command to find candidates
-prompt: "Fix this issue: $INPUT" # Prompt text (or use template)
-template: "template.txt" # Load prompt from file instead
-claude_flags: "--fast" # Optional Claude CLI flags
-accept_best_effort: false # Accept partial fixes
+candidate_source: "cargo check 2>&1 | grep -oP 'error\\[E\\d+\\].*' | jq -R -s 'split(\"\\n\") | map(select(length > 0))'",
+prompt: "Fix this compiler error: $INPUT"
 ```
 
 ## Usage
@@ -77,8 +84,6 @@ nigel mytask --evens   # Process candidates with even MD5 hash
 nigel mytask --odds    # Process candidates with odd MD5 hash
 ```
 
-### CLI Flags
-
 | Flag        | Description                            |
 | ----------- | -------------------------------------- |
 | `--list`    | List all available tasks               |
@@ -88,54 +93,50 @@ nigel mytask --odds    # Process candidates with odd MD5 hash
 | `--evens`   | Only process candidates with even hash |
 | `--odds`    | Only process candidates with odd hash  |
 
-## How It Works
+## Configuration
 
-1. Runs your candidate source to identify **candidates** (issues to fix)
-2. Selects the first unprocessed candidate
-3. Sends candidate details to Claude with your templated prompt
-4. Verifies the fix by re-running the candidate source
-5. Commits successful fixes or resets on failure
-6. Repeats until done or limit reached
+### config.yaml (Global)
 
-### Task Modes
+```yaml
+# Path to Claude CLI (find this by running `claude doctor`)
+claude_command: "~/.claude/local/node_modules/.bin/claude"
 
-- **Standard Mode** (`accept_best_effort: false`): Resets changes if fix doesn't fully resolve the candidate
-- **Best-Effort Mode** (`accept_best_effort: true`): Commits partial improvements even if candidate isn't fully fixed
+# Runs after Claude makes changes, before checking if candidate is resolved
+verify_command: "cargo check"
 
-## Prompt Templates
+# Runs when candidate is no longer present in source
+# Available variables: $CANDIDATE (JSON), $TASK_NAME
+success_command: "git commit -m 'Fix: $CANDIDATE'"
 
-Templates support `$INPUT` variable interpolation for accessing candidate data:
+# Runs when candidate is still present (or verify failed)
+reset_command: "git reset --hard"
+```
 
-| Syntax          | Description                          | Example                    |
-| --------------- | ------------------------------------ | -------------------------- |
-| `$INPUT`        | Whole input (single items unwrapped) | `"file.go"` or `["a","b"]` |
-| `$INPUT[0]`     | Array index (0-based)                | First element              |
-| `$INPUT[1]`     | Array index                          | Second element             |
-| `$INPUT[1:]`    | Slice from index to end              | `["b","c","d"]`            |
-| `$INPUT["key"]` | Map key lookup                       | Value for key              |
+### task.yaml (Per-Task)
 
-**Special cases:**
+```yaml
+candidate_source: "cargo check 2>&1 | grep error"
+prompt: "Fix this issue: $INPUT"       # Inline prompt, or...
+template: "template.txt"               # ...load from file
+claude_flags: "--fast"                 # Optional CLI flags
+accept_best_effort: false              # Accept partial fixes
+```
 
-- Single-item arrays are unwrapped: `$INPUT` on `["x"]` returns `"x"`
-- Out of bounds index returns empty string
-- Missing map key returns empty string
+## Candidate Sources
 
-**In commands** (success_command, etc.):
+A candidate source is a command that outputs JSON - a list of things for Nigel to work through. Candidates are evaluated in order and re-generated between runs. Once a candidate has been processed, it won't be retried (tracked via `ignore.log` in your task directory - remove entries to retry them).
 
-- `$CANDIDATE` - Full candidate key (JSON serialization)
-- `$TASK_NAME` - Current task name
+Three output formats are supported:
 
-### Candidate Format
-
-Candidate sources must output JSON. Each candidate can be:
-
-**Strings** (simple case):
+**Strings** - for simple single-value candidates:
 
 ```json
 ["file1.go", "file2.go", "file3.go"]
 ```
 
-**Arrays** (multiple values per candidate):
+Access in prompt with `$INPUT`.
+
+**Arrays** - when you need multiple values per candidate (e.g. file, line number, message):
 
 ```json
 [
@@ -144,37 +145,59 @@ Candidate sources must output JSON. Each candidate can be:
 ]
 ```
 
-Access with `$INPUT[0]`, `$INPUT[1]`, `$INPUT[1:]`
+Access in prompt with `$INPUT[0]`, `$INPUT[1]`, `$INPUT[1:]`.
 
-**Maps** (named fields):
+**Maps** - for self-documenting structured data:
 
 ```json
 [{ "file": "test.go", "line": 10, "type": "error" }]
 ```
 
-Access with `$INPUT["file"]`, `$INPUT["line"]`
+Access with `$INPUT["file"]`, `$INPUT["line"]`.
 
-### Candidate Keys
+## Prompts
 
-Each candidate has a unique key used for tracking in `ignored.log`:
+Prompts tell Claude what to do with each candidate. You can either inline them in `task.yaml`:
 
-- **Strings**: The string itself (`file.go`)
-- **Arrays**: JSON serialization (`["file.go","10"]`)
-- **Maps**: JSON serialization (`{"file":"test.go","line":10}`)
+```yaml
+prompt: "Fix this compiler error: $INPUT"
+```
 
-## Generated Files
+Or use a template file for longer prompts:
 
-Each task directory will contain auto-generated files:
+```yaml
+template: "template.txt"
+```
 
-- `ignored.log` - Processed candidates (prevents reprocessing)
-- `claude.log` - Full Claude interaction logs for auditing
+**template.txt:**
+```
+Fix the following compiler error in this codebase.
 
-## Controls
+Error: $INPUT[0]
+File: $INPUT[1]
+Line: $INPUT[2]
 
-- Press `Ctrl+\` (SIGQUIT) to gracefully stop after the current iteration
-- Exponential backoff on consecutive failures (5min → 10min → 20min → 40min → 1hr max)
-- Rate limit detection ("You've hit your limit") triggers immediate 1-hour backoff
+Make the minimal change necessary to resolve the error.
+```
 
-## License
+### Variable Reference
 
-MIT
+| Syntax          | Description                          | Example Output             |
+| --------------- | ------------------------------------ | -------------------------- |
+| `$INPUT`        | Whole input (single items unwrapped) | `"file.go"` or `["a","b"]` |
+| `$INPUT[0]`     | Array index (0-based)                | First element              |
+| `$INPUT[1]`     | Array index                          | Second element             |
+| `$INPUT[1:]`    | Slice from index to end              | `["b","c","d"]`            |
+| `$INPUT["key"]` | Map key lookup                       | Value for key              |
+
+## Best-Effort Mode
+
+By default, Nigel resets changes if the candidate is still present after Claude's fix. This makes sense for things like compiler errors where you need exact resolution.
+
+For tasks where partial progress is valuable (refactoring, lint fixes, etc.), set:
+
+```yaml
+accept_best_effort: true
+```
+
+This commits whatever Claude produces, regardless of whether the candidate fully resolves.
