@@ -1,4 +1,4 @@
-<img src="nigel.png" width="500">
+<img src="nigel.png#n" width="500">
 
 Nigel is a CLI tool that automates iterative code improvements using Claude AI. It identifies issues via custom candidate sources, sends them to Claude for fixing, verifies the results, and commits successful improvements.
 
