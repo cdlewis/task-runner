@@ -18,8 +18,8 @@ func main() {
 	oddsFlag := flag.Bool("odds", false, "Only process candidates with odd MD5 hash")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: task-runner <task> [options]\n")
-		fmt.Fprintf(os.Stderr, "       task-runner --list\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: nigel <task> [options]\n")
+		fmt.Fprintf(os.Stderr, "       nigel --list\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
 	}

@@ -1,25 +1,25 @@
 <img src="nigel.png" width="500">
 
-Task Runner is a CLI tool that automates iterative code improvements using Claude AI. It identifies issues via custom candidate sources, sends them to Claude for fixing, verifies the results, and commits successful improvements.
+Nigel is a CLI tool that automates iterative code improvements using Claude AI. It identifies issues via custom candidate sources, sends them to Claude for fixing, verifies the results, and commits successful improvements.
 
 ## Installation
 
 ```bash
-go build -o bin/task-runner
+go build -o bin/nigel
 ```
 
 Then add the bin directory to your path:
 
 ```bash
-export PATH="$PATH:/your/path/to/task-runner/bin"
+export PATH="$PATH:/your/path/to/nigel/bin"
 ```
 
 ## Quick Start
 
-1. Create a `task-runner/` directory in your project root
+1. Create a `nigel/` directory in your project root (or `task-runner/` for backwards compatibility)
 2. Add a `config.yaml` with global settings
 3. Create task directories with `task.yaml` files
-4. Run: `task-runner <task-name>`
+4. Run: `nigel <task-name>`
 
 ## Configuration
 
@@ -27,7 +27,7 @@ export PATH="$PATH:/your/path/to/task-runner/bin"
 
 ```
 project-root/
-├── task-runner/
+├── nigel/
 │   ├── config.yaml           # Global configuration
 │   └── mytask/               # Task directory
 │       ├── task.yaml         # Task definition
@@ -61,20 +61,20 @@ accept_best_effort: false # Accept partial fixes
 
 ```bash
 # List available tasks
-task-runner --list
+nigel --list
 
 # Run a task
-task-runner mytask
+nigel mytask
 
 # Run with iteration limit
-task-runner mytask --limit 10
+nigel mytask --limit 10
 
 # Preview prompts without executing
-task-runner mytask --dry-run --verbose
+nigel mytask --dry-run --verbose
 
 # Distribute work across parallel runners
-task-runner mytask --evens   # Process candidates with even MD5 hash
-task-runner mytask --odds    # Process candidates with odd MD5 hash
+nigel mytask --evens   # Process candidates with even MD5 hash
+nigel mytask --odds    # Process candidates with odd MD5 hash
 ```
 
 ### CLI Flags
@@ -174,10 +174,6 @@ Each task directory will contain auto-generated files:
 - Press `Ctrl+\` (SIGQUIT) to gracefully stop after the current iteration
 - Exponential backoff on consecutive failures (5min → 10min → 20min → 40min → 1hr max)
 - Rate limit detection ("You've hit your limit") triggers immediate 1-hour backoff
-
-## What is the cat's name?
-
-Nigel.
 
 ## License
 

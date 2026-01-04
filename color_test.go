@@ -111,9 +111,9 @@ func TestStartupBanner(t *testing.T) {
 		t.Error("Startup banner should contain 'Logs: /path/to/logs'")
 	}
 
-	// Should contain bold "Task Runner"
-	if !strings.Contains(result, colorBold+"Task Runner") {
-		t.Error("Startup banner should contain bold 'Task Runner'")
+	// Should contain bold "Nigel"
+	if !strings.Contains(result, colorBold+"Nigel") {
+		t.Error("Startup banner should contain bold 'Nigel'")
 	}
 
 	// Should contain cat ASCII art elements

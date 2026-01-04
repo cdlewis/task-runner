@@ -39,9 +39,13 @@ func DiscoverEnvironment() (*Environment, error) {
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	runnerDir := filepath.Join(cwd, "task-runner")
+	// Look for nigel/ directory first, fall back to task-runner/ for backwards compatibility
+	runnerDir := filepath.Join(cwd, "nigel")
 	if _, err := os.Stat(runnerDir); os.IsNotExist(err) {
-		return nil, fmt.Errorf("no task-runner/ directory found in current directory")
+		runnerDir = filepath.Join(cwd, "task-runner")
+		if _, err := os.Stat(runnerDir); os.IsNotExist(err) {
+			return nil, fmt.Errorf("no nigel/ or task-runner/ directory found in current directory")
+		}
 	}
 
 	configPath := filepath.Join(runnerDir, "config.yaml")
@@ -91,7 +95,7 @@ func loadTasks(runnerDir string) (map[string]Task, error) {
 
 	entries, err := os.ReadDir(runnerDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read task-runner directory: %w", err)
+		return nil, fmt.Errorf("failed to read config directory: %w", err)
 	}
 
 	for _, entry := range entries {

@@ -1,4 +1,4 @@
-module github.com/cdlewis/task-runner
+module github.com/cdlewis/nigel
 
 go 1.21
 

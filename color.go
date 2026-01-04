@@ -145,7 +145,7 @@ func StartupBanner(taskName, logPath, mode string) string {
 
 	// Build labels map: line index -> label
 	labels := map[int]string{
-		2: ColorBold("Task Runner"),
+		2: ColorBold("Nigel"),
 		// line 3 is empty
 		4: "Task: " + taskName,
 		5: "Logs: " + logPath,
