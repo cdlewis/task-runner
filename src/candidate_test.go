@@ -279,6 +279,60 @@ func TestIgnoredList(t *testing.T) {
 	})
 }
 
+func TestDeterministicMapKeys(t *testing.T) {
+	t.Run("map keys are deterministic across parses", func(t *testing.T) {
+		// Parse the same JSON multiple times
+		jsonInput := `[{"file": "test.go", "line": 10}, {"line": 20, "file": "other.go"}]`
+
+		var keys1 []string
+		for i := 0; i < 10; i++ {
+			candidates, err := ParseCandidates([]byte(jsonInput))
+			if err != nil {
+				t.Fatalf("parse failed: %v", err)
+			}
+
+			var currentKeys []string
+			for _, c := range candidates {
+				currentKeys = append(currentKeys, c.Key)
+			}
+
+			if i == 0 {
+				keys1 = currentKeys
+			} else {
+				// Keys should be identical across all parses
+				for j, k := range currentKeys {
+					if k != keys1[j] {
+						t.Errorf("parse %d: key[%d] = %q, want %q", i, j, k, keys1[j])
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("map keys are sorted for consistency", func(t *testing.T) {
+		// Regardless of input order, output should be sorted
+		input1 := `[{"file": "test.go", "line": 10}]`
+		input2 := `[{"line": 10, "file": "test.go"}]`
+
+		candidates1, _ := ParseCandidates([]byte(input1))
+		candidates2, _ := ParseCandidates([]byte(input2))
+
+		if len(candidates1) != 1 || len(candidates2) != 1 {
+			t.Fatal("expected 1 candidate each")
+		}
+
+		if candidates1[0].Key != candidates2[0].Key {
+			t.Errorf("keys differ: %q vs %q", candidates1[0].Key, candidates2[0].Key)
+		}
+
+		// Verify keys are alphabetically sorted
+		expected := `{"file":"test.go","line":10}`
+		if candidates1[0].Key != expected {
+			t.Errorf("key = %q, want %q (sorted)", candidates1[0].Key, expected)
+		}
+	})
+}
+
 func TestSelectCandidate(t *testing.T) {
 	t.Run("selects first non-ignored candidate", func(t *testing.T) {
 		dir := t.TempDir()

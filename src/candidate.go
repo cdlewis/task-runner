@@ -37,27 +37,80 @@ func ParseCandidates(jsonData []byte) ([]Candidate, error) {
 
 	candidates := make([]Candidate, 0, len(raw))
 	for _, item := range raw {
-		// Compact the JSON for consistent key generation
+		// For simple strings, use the unquoted value as the key
+		var str string
+		if err := json.Unmarshal(item, &str); err == nil {
+			candidates = append(candidates, Candidate{
+				Key:  str,
+				Data: item,
+			})
+			continue
+		}
+
+		// For objects, normalize by sorting keys for deterministic key generation
+		if len(item) > 0 && item[0] == '{' {
+			var m map[string]json.RawMessage
+			if err := json.Unmarshal(item, &m); err == nil {
+				key := normalizeMapKey(m)
+				candidates = append(candidates, Candidate{
+					Key:  key,
+					Data: item,
+				})
+				continue
+			}
+		}
+
+		// For arrays or anything else, use compacted JSON as key
 		var buf bytes.Buffer
 		if err := json.Compact(&buf, item); err != nil {
 			return nil, fmt.Errorf("failed to compact JSON: %w", err)
 		}
 
-		key := buf.String()
-
-		// For simple strings, use the unquoted value as the key
-		var str string
-		if err := json.Unmarshal(item, &str); err == nil {
-			key = str
-		}
-
 		candidates = append(candidates, Candidate{
-			Key:  key,
+			Key:  buf.String(),
 			Data: item,
 		})
 	}
 
 	return candidates, nil
+}
+
+// normalizeMapKey creates a deterministic key for map candidates by sorting keys.
+func normalizeMapKey(m map[string]json.RawMessage) string {
+	// Get sorted keys
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	// Simple string sort is sufficient for our use case
+	for i := 0; i < len(keys); i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if keys[i] > keys[j] {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+
+	// Build JSON with sorted keys
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, k := range keys {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		// Write key (quoted)
+		buf.WriteByte('"')
+		buf.WriteString(k)
+		buf.WriteByte('"')
+		buf.WriteByte(':')
+		// Write value (compact it)
+		if err := json.Compact(&buf, m[k]); err != nil {
+			// Fallback: just write the raw value
+			buf.Write(m[k])
+		}
+	}
+	buf.WriteByte('}')
+	return buf.String()
 }
 
 // IsArray returns true if the candidate data is a JSON array.
