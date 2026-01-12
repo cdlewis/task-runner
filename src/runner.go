@@ -359,22 +359,15 @@ func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
 		} else {
 			// Build failed, reset
 			fmt.Println(ColorWarning("Build failed, resetting..."))
-			if !r.runReset() {
+			if !r.runResetAndVerify() {
 				return false, fmt.Errorf("failed to reset")
-			}
-			if !r.runVerify() {
-				return false, fmt.Errorf("build still fails after reset")
 			}
 			r.logOutcome(OutcomeBuildFailed, "reverted")
 		}
 	} else {
 		// Standard mode: reset changes
-		fmt.Println(ColorInfo("Resetting changes..."))
-		if !r.runReset() {
+		if !r.runResetAndVerify() {
 			return false, fmt.Errorf("failed to reset")
-		}
-		if !r.runVerify() {
-			return false, fmt.Errorf("build fails after reset")
 		}
 		r.logOutcome(OutcomeNotFixed, "reverted")
 	}
@@ -424,15 +417,37 @@ func (r *Runner) runReset() bool {
 	if r.env.Config.ResetCommand == "" {
 		return true
 	}
+
 	ok, err := RunCommandSilent(r.env.Config.ResetCommand, r.env.ProjectDir)
 	if err != nil {
-		fmt.Println(ColorError(fmt.Sprintf("Reset command error: %v", err)))
 		return false
 	}
-	if ok {
-		fmt.Println(ColorSuccess("✓ Reset complete"))
-	}
 	return ok
+}
+
+func (r *Runner) runResetAndVerify() bool {
+	fmt.Print(ColorInfo("Resetting changes and verifying build..."))
+
+	// Reset
+	if !r.runReset() {
+		fmt.Println(ColorError(" FAILED"))
+		return false
+	}
+
+	// Verify
+	if r.env.Config.VerifyCommand == "" {
+		fmt.Println(ColorInfo(" OK"))
+		return true
+	}
+
+	ok, err := RunCommandSilent(r.env.Config.VerifyCommand, r.env.ProjectDir)
+	if err != nil || !ok {
+		fmt.Println(ColorError(" FAILED"))
+		return false
+	}
+
+	fmt.Println(ColorInfo(" OK"))
+	return true
 }
 
 func (r *Runner) modeString() string {
