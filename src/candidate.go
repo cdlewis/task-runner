@@ -27,14 +27,35 @@ const (
 	HashFilterOdds
 )
 
-// ParseCandidates parses the JSON output from a candidate source.
-// Supports: ["a", "b"], [["a", "x"], ["b", "y"]], or [{"file": "a"}, {"file": "b"}]
-func ParseCandidates(jsonData []byte) ([]Candidate, error) {
+// ParseCandidates parses the output from a candidate source.
+// Supports JSON arrays like ["a", "b"], [["a", "x"], ["b", "y"]], or [{"file": "a"}, {"file": "b"}]
+// If JSON parsing fails, treats input as newline-separated plain text (one candidate per non-empty line).
+func ParseCandidates(data []byte) ([]Candidate, error) {
+	// First try JSON parsing
 	var raw []json.RawMessage
-	if err := json.Unmarshal(jsonData, &raw); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON array: %w", err)
+	if err := json.Unmarshal(data, &raw); err == nil {
+		return parseJsonCandidates(raw)
 	}
 
+	// JSON failed - treat as newline-separated plain text
+	lines := strings.Split(string(data), "\n")
+	candidates := make([]Candidate, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			// Wrap as JSON string for Data field compatibility
+			jsonStr := `"` + jsonEscape(line) + `"`
+			candidates = append(candidates, Candidate{
+				Key:  line,
+				Data: json.RawMessage(jsonStr),
+			})
+		}
+	}
+	return candidates, nil
+}
+
+// parseJsonCandidates parses a JSON array of candidates.
+func parseJsonCandidates(raw []json.RawMessage) ([]Candidate, error) {
 	candidates := make([]Candidate, 0, len(raw))
 	for _, item := range raw {
 		// For simple strings, use the unquoted value as the key
@@ -73,6 +94,13 @@ func ParseCandidates(jsonData []byte) ([]Candidate, error) {
 	}
 
 	return candidates, nil
+}
+
+// jsonEscape escapes special characters in a string for JSON encoding.
+func jsonEscape(s string) string {
+	// Use encoding/json to properly escape the string
+	buf, _ := json.Marshal(s)
+	return string(buf[1 : len(buf)-1]) // Remove surrounding quotes
 }
 
 // normalizeMapKey creates a deterministic key for map candidates by sorting keys.

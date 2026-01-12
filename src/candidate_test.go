@@ -11,7 +11,6 @@ func TestParseCandidates(t *testing.T) {
 		name        string
 		input       string
 		expectedKey []string // Expected Key for each candidate
-		expectError bool
 	}{
 		{
 			name:        "simple string array",
@@ -39,21 +38,36 @@ func TestParseCandidates(t *testing.T) {
 			expectedKey: []string{},
 		},
 		{
-			name:        "invalid JSON",
-			input:       `not json`,
-			expectError: true,
+			name:        "newline-separated plain text",
+			input:       "file1.go\nfile2.go\nfile3.go\n",
+			expectedKey: []string{"file1.go", "file2.go", "file3.go"},
+		},
+		{
+			name:        "newline-separated with blank lines",
+			input:       "file1.go\n\nfile2.go\n\n\n",
+			expectedKey: []string{"file1.go", "file2.go"},
+		},
+		{
+			name:        "newline-separated with whitespace trimming",
+			input:       "  file1.go  \n\tfile2.go\t\n  file3.go  ",
+			expectedKey: []string{"file1.go", "file2.go", "file3.go"},
+		},
+		{
+			name:        "single line without newline",
+			input:       "single.go",
+			expectedKey: []string{"single.go"},
+		},
+		{
+			name:        "newline-separated with special characters",
+			input:       `file with "quotes".go
+file's with apostrophe.go`,
+			expectedKey: []string{`file with "quotes".go`, `file's with apostrophe.go`},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := ParseCandidates([]byte(tt.input))
-			if tt.expectError {
-				if err == nil {
-					t.Error("expected error but got none")
-				}
-				return
-			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
