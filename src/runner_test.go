@@ -68,3 +68,147 @@ func TestRateLimitError(t *testing.T) {
 	// Verify it implements error interface
 	var _ error = err
 }
+
+func TestCandidateVerification(t *testing.T) {
+	tests := []struct {
+		name          string
+		candidateKey  string
+		sourceOutput  string
+		hashFilter    HashFilter
+		expectedFixed bool
+	}{
+		{
+			name:          "candidate present in JSON array - not fixed",
+			candidateKey:  "func_800BB754_ABF84",
+			sourceOutput:  `["func_800BB754_ABF84", "func_800BB66C_B2C2C"]`,
+			hashFilter:    HashFilterNone,
+			expectedFixed: false,
+		},
+		{
+			name:          "candidate absent from JSON array - fixed",
+			candidateKey:  "func_800BB754_ABF84",
+			sourceOutput:  `["func_800BB66C_B2C2C", "other_function"]`,
+			hashFilter:    HashFilterNone,
+			expectedFixed: true,
+		},
+		{
+			name:          "candidate present in newline-separated output - not fixed",
+			candidateKey:  "func_800BB754_ABF84",
+			sourceOutput:  "func_800BB754_ABF84\nfunc_800BB66C_B2C2C\n",
+			hashFilter:    HashFilterNone,
+			expectedFixed: false,
+		},
+		{
+			name:          "candidate absent from newline-separated output - fixed",
+			candidateKey:  "func_800BB754_ABF84",
+			sourceOutput:  "func_800BB66C_B2C2C\nother_function\n",
+			hashFilter:    HashFilterNone,
+			expectedFixed: true,
+		},
+		{
+			name:          "object candidates - candidate present",
+			candidateKey:  `{"file":"foo.c","line":42}`,
+			sourceOutput:  `[{"file":"foo.c","line":42},{"file":"bar.c","line":10}]`,
+			hashFilter:    HashFilterNone,
+			expectedFixed: false,
+		},
+		{
+			name:          "object candidates - candidate absent",
+			candidateKey:  `{"file":"foo.c","line":42}`,
+			sourceOutput:  `[{"file":"bar.c","line":10},{"file":"baz.c","line":99}]`,
+			hashFilter:    HashFilterNone,
+			expectedFixed: true,
+		},
+		{
+			name:          "object candidates - key order normalized",
+			candidateKey:  `{"file":"foo.c","line":42}`,
+			sourceOutput:  `[{"line":42,"file":"foo.c"},{"file":"bar.c","line":10}]`,
+			hashFilter:    HashFilterNone,
+			expectedFixed: false,
+		},
+		{
+			name:          "array candidate present in array-of-arrays source",
+			candidateKey:  `["a","b"]`,
+			sourceOutput:  `[["b","z"],["a","b"]]`,
+			hashFilter:    HashFilterNone,
+			expectedFixed: false,
+		},
+		{
+			name:          "array candidate absent from array-of-arrays source",
+			candidateKey:  `["a","b"]`,
+			sourceOutput:  `[["b","z"],["c","d"]]`,
+			hashFilter:    HashFilterNone,
+			expectedFixed: true,
+		},
+		{
+			name:          "array candidate with whitespace - compaction normalizes",
+			candidateKey:  `["a","b"]`,
+			sourceOutput:  `[["b","z"], [ "a", "b" ]]`,
+			hashFilter:    HashFilterNone,
+			expectedFixed: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candidates, err := ParseCandidates([]byte(tt.sourceOutput))
+			if err != nil {
+				t.Fatalf("ParseCandidates failed: %v", err)
+			}
+
+			candidates = FilterByHash(candidates, tt.hashFilter)
+
+			fixed := !containsKey(candidates, tt.candidateKey)
+			if fixed != tt.expectedFixed {
+				t.Errorf("containsKey result = %v (fixed), want %v. Candidate key: %q, Parsed candidates: %+v",
+					fixed, tt.expectedFixed, tt.candidateKey, candidates)
+			}
+		})
+	}
+}
+
+func TestCandidateVerificationWithHashFilter(t *testing.T) {
+	// Test that hash filtering is applied consistently
+	// This verifies the fix for the hash filter inconsistency bug
+	sourceOutput := `["candidate1", "candidate2", "candidate3", "candidate4", "candidate5"]`
+
+	candidates, err := ParseCandidates([]byte(sourceOutput))
+	if err != nil {
+		t.Fatalf("ParseCandidates failed: %v", err)
+	}
+
+	// Find a candidate that will be filtered out by evens filter
+	var filteredOutKey string
+	for _, c := range candidates {
+		evensFiltered := FilterByHash([]Candidate{c}, HashFilterEvens)
+		if len(evensFiltered) == 0 {
+			filteredOutKey = c.Key
+			break
+		}
+	}
+
+	if filteredOutKey == "" {
+		t.Skip("Could not find a candidate that gets filtered by evens (need more candidates)")
+	}
+
+	// With evens filter, the filtered-out candidate should appear "fixed" (not found)
+	evensCandidates := FilterByHash(candidates, HashFilterEvens)
+	fixedWithEvens := !containsKey(evensCandidates, filteredOutKey)
+	if !fixedWithEvens {
+		t.Errorf("Candidate %q should be filtered out by evens filter", filteredOutKey)
+	}
+
+	// With odds filter, the same candidate should be present (not "fixed")
+	oddsCandidates := FilterByHash(candidates, HashFilterOdds)
+	fixedWithOdds := !containsKey(oddsCandidates, filteredOutKey)
+	if fixedWithOdds {
+		t.Errorf("Candidate %q should be present in odds filter", filteredOutKey)
+	}
+
+	// With no filter, candidate should be present
+	noFilterCandidates := FilterByHash(candidates, HashFilterNone)
+	fixedWithNoFilter := !containsKey(noFilterCandidates, filteredOutKey)
+	if fixedWithNoFilter {
+		t.Errorf("Candidate %q should be present with no filter", filteredOutKey)
+	}
+}
