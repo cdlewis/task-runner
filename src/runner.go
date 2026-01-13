@@ -272,6 +272,9 @@ func (r *Runner) runIteration() (done bool, err error) {
 		return false, fmt.Errorf("failed to parse new candidates: %w", err)
 	}
 
+	// Apply the same hash filter for consistent verification
+	newCandidates = FilterByHash(newCandidates, r.opts.HashFilter)
+
 	candidateFixed := !containsKey(newCandidates, candidate.Key)
 
 	if candidateFixed {
