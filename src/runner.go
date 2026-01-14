@@ -274,7 +274,6 @@ func (r *Runner) runIteration() (done bool, err error) {
 	// Verify build FIRST before checking candidate presence
 	// Invalid changes can cause candidates to be excluded from source,
 	// creating false positives if we check presence before build
-	fmt.Println(ColorInfo("Verifying build..."))
 	if !r.runVerify() {
 		fmt.Println(ColorWarning("Build failed after Claude changes"))
 		return r.handleFailure(candidate)
