@@ -254,6 +254,8 @@ func (r *Runner) runIteration() (done bool, err error) {
 	claudeCmd := r.task.ClaudeCommand
 	if claudeCmd == "" {
 		claudeCmd = r.env.Config.ClaudeCommand
+	} else if r.opts.Verbose {
+		fmt.Printf(ColorInfo("Using task-level claude_command: %s\n"), claudeCmd)
 	}
 
 	claudeOutput, err := RunClaudeCommand(claudeCmd, claudeFlags, prompt, r.env.ProjectDir, r.claudeLogger)

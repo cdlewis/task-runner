@@ -64,6 +64,8 @@ candidate_source: "cargo check 2>&1 | grep -oP 'error\\[E\\d+\\].*' | jq -R -s '
 prompt: "Fix this compiler error: $INPUT"
 ```
 
+You can override the global `claude_command` for a specific task by adding `claude_command` to your `task.yaml`:
+
 ## Usage
 
 ```bash
@@ -89,7 +91,7 @@ nigel mytask --odds    # Process candidates with odd MD5 hash
 | `--list`    | List all available tasks               |
 | `--limit N` | Maximum iterations (0 = unlimited)     |
 | `--dry-run` | Print prompts without executing Claude |
-| `--verbose` | Print full prompt content              |
+| `--verbose` | Print full prompt content and show task-level claude_command overrides |
 | `--evens`   | Only process candidates with even hash |
 | `--odds`    | Only process candidates with odd hash  |
 
@@ -119,6 +121,7 @@ candidate_source: "cargo check 2>&1 | grep error"
 prompt: "Fix this issue: $INPUT"       # Inline prompt, or...
 template: "template.txt"               # ...load from file
 claude_flags: "--fast"                 # Optional CLI flags
+claude_command: "~/.claude/custom"     # Override global claude_command
 accept_best_effort: false              # Accept partial fixes
 ```
 
