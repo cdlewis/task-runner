@@ -26,6 +26,15 @@ func (e *rateLimitError) Error() string {
 	return e.msg
 }
 
+// fatalError indicates an error that should stop execution immediately
+type fatalError struct {
+	msg string
+}
+
+func (e *fatalError) Error() string {
+	return e.msg
+}
+
 // calculateBackoff returns the backoff duration for the given level
 func calculateBackoff(level int) time.Duration {
 	backoff := baseBackoff
@@ -143,6 +152,12 @@ func (r *Runner) Run() error {
 		done, err := r.runIteration()
 		if err != nil {
 			fmt.Println(ColorError(fmt.Sprintf("Error: %v", err)))
+
+			// Check if it's a fatal error - stop immediately
+			if _, isFatal := err.(*fatalError); isFatal {
+				fmt.Println(ColorError("Fatal error, stopping."))
+				return err
+			}
 
 			// Check if it's a rate limit error
 			if _, isRateLimit := err.(*rateLimitError); isRateLimit {
@@ -332,10 +347,10 @@ func (r *Runner) handleSuccess(candidate *Candidate, buildVerified bool) (bool, 
 	if !buildVerified && !r.runVerify() {
 		fmt.Println(ColorWarning("Build verification failed after fix, attempting recovery..."))
 		if !r.runReset() {
-			return false, fmt.Errorf("failed to reset after build failure")
+			return false, &fatalError{msg: "failed to reset after build failure"}
 		}
 		if !r.runVerify() {
-			return false, fmt.Errorf("build still fails after reset")
+			return false, &fatalError{msg: "build still fails after reset"}
 		}
 		fmt.Println("Recovered via reset.")
 		r.logOutcome(OutcomeFixedReverted, "build failed after fix")
@@ -404,14 +419,14 @@ func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
 			// Build failed, reset
 			fmt.Println(ColorWarning("Build failed, resetting..."))
 			if !r.runResetAndVerify() {
-				return false, fmt.Errorf("failed to reset")
+				return false, &fatalError{msg: "failed to reset"}
 			}
 			r.logOutcome(OutcomeBuildFailed, "reverted")
 		}
 	} else {
 		// Standard mode: reset changes
 		if !r.runResetAndVerify() {
-			return false, fmt.Errorf("failed to reset")
+			return false, &fatalError{msg: "failed to reset"}
 		}
 		r.logOutcome(OutcomeNotFixed, "reverted")
 	}
