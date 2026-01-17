@@ -29,6 +29,7 @@ type Task struct {
 	ClaudeCommand    string `yaml:"claude_command"`
 	AcceptBestEffort bool          `yaml:"accept_best_effort"`
 	Timeout          time.Duration `yaml:"timeout"`
+	IgnoreList       string `yaml:"ignore_list"` // Command to generate ignore list
 }
 
 type Environment struct {

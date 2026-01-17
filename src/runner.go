@@ -74,7 +74,14 @@ func NewRunner(env *Environment, taskName string, opts RunnerOptions) (*Runner, 
 		return nil, fmt.Errorf("task not found: %s", taskName)
 	}
 
-	ignoredList, err := NewIgnoredList(task.Dir)
+	// Create ignore list from command, file, or nil (no filtering)
+	var ignoredList *IgnoredList
+	var err error
+	if task.IgnoreList != "" {
+		ignoredList, err = NewIgnoredListFromCommand(task.IgnoreList, task.Dir)
+	} else {
+		ignoredList, err = NewIgnoredList(task.Dir)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ignored list: %w", err)
 	}
@@ -219,9 +226,11 @@ func (r *Runner) runIteration() (done bool, err error) {
 
 	// Count ignored candidates
 	ignoredCount := 0
-	for _, c := range candidates {
-		if r.ignoredList.Contains(c.Key) {
-			ignoredCount++
+	if r.ignoredList != nil {
+		for _, c := range candidates {
+			if r.ignoredList.Contains(c.Key) {
+				ignoredCount++
+			}
 		}
 	}
 
@@ -376,8 +385,10 @@ func (r *Runner) handleSuccess(candidate *Candidate, buildVerified bool) (bool, 
 		}
 		fmt.Println("Recovered via reset.")
 		r.logOutcome(OutcomeFixedReverted, "build failed after fix")
-		if err := r.ignoredList.Add(candidate.Key); err != nil {
-			return false, err
+		if r.ignoredList != nil {
+			if err := r.ignoredList.Add(candidate.Key); err != nil {
+				return false, err
+			}
 		}
 		return false, nil
 	}
@@ -453,8 +464,10 @@ func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
 		r.logOutcome(OutcomeNotFixed, "reverted")
 	}
 
-	if err := r.ignoredList.Add(candidate.Key); err != nil {
-		return false, err
+	if r.ignoredList != nil {
+		if err := r.ignoredList.Add(candidate.Key); err != nil {
+			return false, err
+		}
 	}
 
 	return false, nil
@@ -504,8 +517,10 @@ func (r *Runner) handleTimeout(candidate *Candidate) (bool, error) {
 		r.logOutcome(OutcomeNotFixed, "timeout - reverted")
 	}
 
-	if err := r.ignoredList.Add(candidate.Key); err != nil {
-		return false, err
+	if r.ignoredList != nil {
+		if err := r.ignoredList.Add(candidate.Key); err != nil {
+			return false, err
+		}
 	}
 
 	return false, nil

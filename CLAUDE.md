@@ -36,7 +36,20 @@ Nigel is a CLI tool that automates iterative code improvements using Claude AI. 
 1. `DiscoverEnvironment()` finds `nigel/` directory (or `task-runner/` for backwards compatibility) and loads configs
 2. `Runner.Run()` iterates until done or limit reached
 3. Each iteration: run candidate source → select candidate → build prompt → invoke Claude → verify fix → commit or reset
-4. Processed candidates stored in `ignored.log` to prevent reprocessing
+4. Processed candidates stored in `ignored.log` to prevent reprocessing (unless `ignore_list` task option is set)
+
+### Task Configuration Options
+
+Tasks can be configured in `nigel/<task>/task.yaml`:
+
+- `candidate_source` - Command that outputs JSON array of candidates
+- `prompt` - Inline prompt template (mutually exclusive with `template`)
+- `template` - Path to prompt template file (mutually exclusive with `prompt`)
+- `claude_flags` - Additional flags to pass to Claude
+- `claude_command` - Override Claude command (also available as global config)
+- `accept_best_effort` - If true, commit changes even if Claude indicates partial success
+- `timeout` - Per-candidate timeout duration
+- `ignore_list` - Command that outputs list of already-processed keys (one per line). Use `echo -n` to disable ignoring and reprocess all candidates. If not specified, defaults to reading from `ignored.log` file.
 
 ### Prompt Variable Interpolation
 

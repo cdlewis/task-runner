@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -306,12 +307,42 @@ func NewIgnoredList(taskDir string) (*IgnoredList, error) {
 	}, nil
 }
 
+// NewIgnoredListFromCommand creates an IgnoredList by running a command.
+// Command should output one ignored key per line.
+func NewIgnoredListFromCommand(command, workDir string) (*IgnoredList, error) {
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Dir = workDir
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("ignore list command failed: %w", err)
+	}
+
+	entries := make(map[string]bool)
+	for _, line := range strings.Split(string(output), "\n") {
+		key := strings.TrimSpace(line)
+		if key != "" {
+			entries[key] = true
+		}
+	}
+
+	return &IgnoredList{
+		path:    "", // No file path for command-based lists
+		entries: entries,
+	}, nil
+}
+
 func (l *IgnoredList) Contains(key string) bool {
 	return l.entries[key]
 }
 
 func (l *IgnoredList) Add(key string) error {
 	if l.entries[key] {
+		return nil
+	}
+
+	// Command-based lists have no file path - don't write
+	if l.path == "" {
+		l.entries[key] = true
 		return nil
 	}
 
@@ -330,9 +361,13 @@ func (l *IgnoredList) Add(key string) error {
 }
 
 // SelectCandidate returns the first candidate not in the ignored list.
+// If ignored is nil, returns the first candidate (no filtering).
 func SelectCandidate(candidates []Candidate, ignored *IgnoredList) *Candidate {
+	if ignored == nil && len(candidates) > 0 {
+		return &candidates[0]
+	}
 	for _, c := range candidates {
-		if !ignored.Contains(c.Key) {
+		if ignored == nil || !ignored.Contains(c.Key) {
 			return &c
 		}
 	}
