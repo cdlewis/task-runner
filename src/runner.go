@@ -202,8 +202,10 @@ func (r *Runner) Run() error {
 
 func (r *Runner) runIteration() (done bool, err error) {
 	// Run candidate source to get candidates
-	fmt.Println(ColorInfo("Running candidate source..."))
+	candidateTimer := NewDelayedProgressTimer("Running candidate source...", 5*time.Second)
+	candidateTimer.Start()
 	output, err := RunCandidateSource(r.task.CandidateSource, r.env.ProjectDir)
+	candidateTimer.Stop()
 	if err != nil {
 		return false, fmt.Errorf("candidate source failed: %w", err)
 	}

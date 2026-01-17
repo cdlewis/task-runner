@@ -97,10 +97,14 @@ func (p *ProgressTimer) printProgress() {
 	elapsed := time.Since(p.startTime)
 
 	var timerPart string
-	if median, ok := p.stats.Median(); ok {
-		timerPart = fmt.Sprintf("(%s · median time %s)",
-			formatDuration(elapsed),
-			formatDuration(median))
+	if p.stats != nil {
+		if median, ok := p.stats.Median(); ok {
+			timerPart = fmt.Sprintf("(%s · median time %s)",
+				formatDuration(elapsed),
+				formatDuration(median))
+		} else {
+			timerPart = fmt.Sprintf("(%s)", formatDuration(elapsed))
+		}
 	} else {
 		timerPart = fmt.Sprintf("(%s)", formatDuration(elapsed))
 	}
@@ -115,10 +119,55 @@ func (p *ProgressTimer) Stop() time.Duration {
 	<-p.doneCh // Wait for goroutine to exit
 
 	duration := time.Since(p.startTime)
-	p.stats.Add(duration)
+	if p.stats != nil {
+		p.stats.Add(duration)
+	}
 
 	// Show cursor and move to new line (keep timer text visible)
 	fmt.Fprintf(os.Stdout, "\033[?25h\n")
 
 	return duration
+}
+
+// DelayedProgressTimer displays a timer only after the operation exceeds a delay.
+type DelayedProgressTimer struct {
+	label     string
+	delay     time.Duration
+	startTime time.Time
+	mu        sync.Mutex
+	timer     *ProgressTimer
+	stopped   bool
+}
+
+// NewDelayedProgressTimer creates a new delayed timer with the given label and delay.
+func NewDelayedProgressTimer(label string, delay time.Duration) *DelayedProgressTimer {
+	return &DelayedProgressTimer{
+		label: label,
+		delay: delay,
+	}
+}
+
+// Start begins the delay timer. The actual timer display will only start
+// after the delay period has passed (if Stop hasn't been called yet).
+func (d *DelayedProgressTimer) Start() {
+	d.startTime = time.Now()
+	go func() {
+		<-time.After(d.delay)
+		d.mu.Lock()
+		if !d.stopped {
+			d.timer = NewProgressTimer(d.label, nil)
+			d.timer.Start()
+		}
+		d.mu.Unlock()
+	}()
+}
+
+// Stop stops the timer. If the delay hasn't passed yet, no timer is shown.
+func (d *DelayedProgressTimer) Stop() {
+	d.mu.Lock()
+	d.stopped = true
+	if d.timer != nil {
+		d.timer.Stop()
+	}
+	d.mu.Unlock()
 }
