@@ -113,6 +113,11 @@ func RunClaudeCommand(claudeCmd, claudeFlags, prompt, workDir string, logWriter 
 		cmdStr = fmt.Sprintf("%s -p %s", claudeCmd, escapedPrompt)
 	}
 
+	// Log the exact command being executed (for debugging hangs)
+	if logWriter != nil {
+		fmt.Fprintf(logWriter, "Command: %s\n", cmdStr)
+	}
+
 	args = append(args, cmdStr)
 
 	cmd := exec.Command("bash", args...)
