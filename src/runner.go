@@ -446,7 +446,7 @@ func (r *Runner) getPrompt(candidate *Candidate) (string, error) {
 		templatePath := filepath.Join(r.task.Dir, r.task.Template)
 		content, err := LoadTemplate(templatePath)
 		if err != nil {
-			return "", err
+			return "", &fatalError{msg: err.Error()}
 		}
 		template = content
 	} else {

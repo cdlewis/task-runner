@@ -212,3 +212,34 @@ func TestCandidateVerificationWithHashFilter(t *testing.T) {
 		t.Errorf("Candidate %q should be present with no filter", filteredOutKey)
 	}
 }
+
+func TestGetPromptMissingTemplateIsFatal(t *testing.T) {
+	// Create a minimal environment for testing
+	env := &Environment{
+		ProjectDir: "/tmp/test-project",
+		Config: Config{
+			ClaudeCommand: "claude",
+		},
+		Tasks: map[string]Task{
+			"test-task": {
+				Name:     "test-task",
+				Dir:      "/tmp/test-task",
+				Template: "nonexistent.md",
+			},
+		},
+	}
+
+	// Use DryRun to avoid creating a logger (which requires directories to exist)
+	runner, err := NewRunner(env, "test-task", RunnerOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("NewRunner failed: %v", err)
+	}
+
+	candidate := &Candidate{Key: "test-candidate"}
+	_, err = runner.getPrompt(candidate)
+
+	// Error should be a fatalError
+	if _, isFatal := err.(*fatalError); !isFatal {
+		t.Errorf("getPrompt with missing template should return fatalError, got %T", err)
+	}
+}
