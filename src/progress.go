@@ -187,19 +187,16 @@ func NewDelayedProgressTimer(label string, delay time.Duration) *DelayedProgress
 	}
 }
 
-// Start begins the delay timer. The label is shown immediately,
-// and the actual timer display will only start after the delay period
-// has passed (if Stop hasn't been called yet).
+// Start begins the delay timer. The label will only be shown after the
+// delay period has passed, to avoid displaying it for operations that complete quickly.
 func (d *DelayedProgressTimer) Start() {
 	d.startTime = time.Now()
-	// Print label immediately
-	fmt.Fprintf(os.Stdout, "%s\033[K", ColorInfo(d.label))
 	go func() {
 		<-time.After(d.delay)
 		d.mu.Lock()
 		if !d.stopped {
-			// Move cursor to start of line before starting timer (will overwrite label)
-			fmt.Fprint(os.Stdout, "\r")
+			// Print label and start timer only after delay has passed
+			fmt.Fprintf(os.Stdout, "%s\033[K", ColorInfo(d.label))
 			d.timer = NewProgressTimer(d.label, nil)
 			d.timer.Start()
 		}
