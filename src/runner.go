@@ -338,6 +338,11 @@ func (r *Runner) runIteration() (done bool, err error) {
 	}
 
 	if err != nil {
+		// Claude errored out - clean up any partial changes before retry
+		fmt.Println(ColorWarning("Claude failed, cleaning up..."))
+		if !r.runResetAndVerify() {
+			return false, &fatalError{msg: "failed to reset after claude error"}
+		}
 		return false, fmt.Errorf("claude failed: %w", err)
 	}
 

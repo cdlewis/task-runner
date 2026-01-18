@@ -197,6 +197,9 @@ func RunClaudeCommand(claudeCmd, claudeFlags, prompt, workDir string, logWriter 
 	go func() {
 		var fullOutput strings.Builder
 		scanner := bufio.NewScanner(stdoutPipe)
+		// Increase buffer size to handle large JSON responses from Claude
+		// Default is 64KB which isn't enough for large code blocks
+		scanner.Buffer(nil, 10*1024*1024) // 10MB max token size
 
 		for scanner.Scan() {
 			line := scanner.Text()

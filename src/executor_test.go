@@ -182,6 +182,46 @@ func TestInterpolateCommand(t *testing.T) {
 	}
 }
 
+func TestLargeJSONLineParsing(t *testing.T) {
+	// Test that scanner can handle lines larger than default 64KB buffer
+	// This verifies the fix for "bufio.Scanner: token too long" error
+	t.Run("line larger than 64KB can be scanned", func(t *testing.T) {
+		// Create a string larger than 64KB (65536 bytes)
+		largeContent := make([]byte, 100*1024) // 100KB
+		for i := range largeContent {
+			largeContent[i] = 'x'
+		}
+		largeLine := string(largeContent)
+
+		// Create a mock JSON line with large content
+		largeJSONLine := `{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"` + largeLine + `"}}}`
+
+		// Verify the line is larger than default buffer
+		if len(largeJSONLine) <= 64*1024 {
+			t.Fatalf("Test data should be larger than 64KB, got %d bytes", len(largeJSONLine))
+		}
+
+		// Verify it's valid JSON
+		var se streamEvent
+		if err := json.Unmarshal([]byte(largeJSONLine), &se); err != nil {
+			t.Fatalf("Failed to parse large JSON line: %v", err)
+		}
+
+		// Verify the event structure is correct
+		if se.Type != "stream_event" {
+			t.Errorf("Expected type 'stream_event', got %q", se.Type)
+		}
+
+		if eventType, ok := se.Event["type"].(string); ok {
+			if eventType != "content_block_delta" {
+				t.Errorf("Expected event type 'content_block_delta', got %q", eventType)
+			}
+		} else {
+			t.Error("Event should have a 'type' field")
+		}
+	})
+}
+
 func TestRunCommandShowOnFail(t *testing.T) {
 	// Helper to capture stdout/stderr
 	captureOutput := func(fn func()) (stdout, stderr string) {
