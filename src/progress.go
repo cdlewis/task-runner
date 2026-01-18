@@ -227,6 +227,8 @@ func (d *DelayedProgressTimer) Reset() {
 	d.mu.Lock()
 	// Stop any running timer display
 	if d.timer != nil {
+		// Clear the timer line before stopping (otherwise the timer text stays visible)
+		fmt.Fprint(os.Stdout, "\r\033[K")
 		d.timer.Stop()
 		d.timer = nil
 	}
