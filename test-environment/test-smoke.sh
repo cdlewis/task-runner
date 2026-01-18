@@ -1,11 +1,19 @@
 #!/bin/bash
 # Comprehensive smoke test script for Nigel
 # Tests various scenarios with clear user feedback
+#
+# Usage: ./test-smoke.sh [--non-interactive]
 
 set -e
 
 NIGEL_BIN="../bin/nigel"
 MOCK_CLAUDE="./mock-claude"
+INTERACTIVE=true
+
+# Check for --non-interactive flag
+if [[ "$1" == "--non-interactive" ]]; then
+    INTERACTIVE=false
+fi
 
 # Color output
 RED='\033[0;31m'
@@ -51,8 +59,10 @@ run_test() {
     echo ""
     echo -e "${GREEN}✅ Test complete${NC}"
     echo ""
-    echo "Press Enter to continue to next test..."
-    read
+    if $INTERACTIVE; then
+        echo "Press Enter to continue to next test..."
+        read
+    fi
 }
 
 # Main test sequence
@@ -62,9 +72,11 @@ main() {
     header "Nigel Smoke Test Suite"
     echo "This script runs comprehensive tests of Nigel's functionality."
     echo "Each test will show what behavior to expect."
-    echo ""
-    echo "Press Enter to begin..."
-    read
+    if $INTERACTIVE; then
+        echo ""
+        echo "Press Enter to begin..."
+        read
+    fi
 
     # Clean up before starting
     cleanup

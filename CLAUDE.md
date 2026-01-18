@@ -79,3 +79,19 @@ To reset state between runs:
 ```bash
 rm nigel/demo-task/*.log .fixed-*
 ```
+
+### Smoke Testing
+
+**Before committing any changes**, run the smoke test suite to verify basic functionality:
+
+```bash
+cd test-environment
+./test-smoke.sh
+```
+
+The smoke test (`test-smoke.sh`) validates:
+- Normal behavior (quick operations, no timers)
+- Slow candidate source (delayed progress timer after 5s)
+- Slow Claude response (inactivity timer after 30s)
+
+This ensures changes don't break core UI behaviors like progress display and timer management.
