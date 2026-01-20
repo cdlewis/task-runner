@@ -115,6 +115,11 @@ func (r *Runner) Run() error {
 		}
 	}
 
+	// Reset environment to clean state before starting
+	if err := r.runStartupReset(); err != nil {
+		return fmt.Errorf("startup reset failed: %w", err)
+	}
+
 	// Set up signal handlers
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGQUIT, syscall.SIGINT, syscall.SIGTERM)
@@ -615,6 +620,43 @@ func (r *Runner) runResetAndVerify() bool {
 
 	fmt.Println(ColorInfo(" OK"))
 	return true
+}
+
+func (r *Runner) runStartupReset() error {
+	fmt.Println(ColorInfo("Resetting environment to clean state..."))
+
+	if r.env.Config.ResetCommand == "" {
+		// No reset command configured - check if there are uncommitted changes
+		hasChanges, err := HasUncommittedChanges(r.env.ProjectDir)
+		if err != nil {
+			return fmt.Errorf("failed to check git status: %w", err)
+		}
+		if hasChanges {
+			return fmt.Errorf("working directory has uncommitted changes but no reset_command configured")
+		}
+		fmt.Println(ColorInfo("No reset_command configured, working directory is clean"))
+		return nil
+	}
+
+	// Run reset command
+	ok, err := RunCommandSilent(r.env.Config.ResetCommand, r.env.ProjectDir)
+	if err != nil {
+		return fmt.Errorf("reset command error: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("reset command failed")
+	}
+
+	// Verify build after reset
+	if r.env.Config.VerifyCommand != "" {
+		ok, err = RunCommandSilent(r.env.Config.VerifyCommand, r.env.ProjectDir)
+		if err != nil || !ok {
+			return fmt.Errorf("build verification failed after reset")
+		}
+	}
+
+	fmt.Println(ColorSuccess("✓ Environment reset complete"))
+	return nil
 }
 
 func (r *Runner) modeString() string {
