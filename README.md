@@ -2,7 +2,7 @@
 
 Nigel is a tool for automating iterative code improvements using Claude Code. You specify a task and a set of candidates. Nigel works through the task with appropriate success/failure handling, logging, guardrails, etc.
 
-Nigel was developed as part of my work on the [Snowboard Kids 2 Decompilation](https://github.com/cdlewis/snowboardkids2-decomp) but I have split it off into its own project so that I can use it elsewhere. You can still find [real-world examples](https://github.com/cdlewis/snowboardkids2-decomp/tree/main/task-runner) of Nigel in that project. It works well for me (I use it every day). Maybe it will work well for you too ¯\\_(ツ)_/¯. 
+Nigel was developed as part of my work on the [Snowboard Kids 2 Decompilation](https://github.com/cdlewis/snowboardkids2-decomp) but I have split it off into its own project so that I can use it elsewhere. You can still find [real-world examples](https://github.com/cdlewis/snowboardkids2-decomp/tree/main/task-runner) of Nigel in that project.
 
 ## How It Works
 
@@ -15,6 +15,21 @@ Nigel was developed as part of my work on the [Snowboard Kids 2 Decompilation](h
 7. Repeats until done or limit reached
 
 A task is only considered successful if the candidate disappears from the source. This can be relaxed with `accept_best_effort: true` if you want to keep partial improvements.
+
+## Why Nigel?
+
+<img src="nigel_in_action.png" width="500">
+
+Nigel may be a good fix for you if you need to run a large number of long-running tasks, which in turn may need to be tuned/customised over time.
+
+I love Nigel because:
+* Tasks are expressed via configuration: it is to experiment with new ideas by copying an existing task and tweaking it;
+* Candidate sources are just the JSON / newline delimited output of shell commands so it's easy to drop in existing scripts or write new ones. There's no special schema.
+* Claude's output is streamed and presented to you like a normal session despite you running in non-interactive mode. This is far nicer than seeing a blank screen for an hour while Claude churns through a particularly gnarly task!
+* You can tell Nigel to stop after the current task finishes with Ctrl-\\. Again, great for long running sessions where you want to try something new but don't want to throw way 30+ minutes of work.
+* Built in parallelism support with --evens and --odds, letting you distribute tasks across multiple worktrees without conflicts.
+* Nigel is extensively tested with both unit and integration tests.
+* He's a cat
 
 ## Requirements
 
