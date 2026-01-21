@@ -379,10 +379,26 @@ func InterpolatePrompt(template string, candidate *Candidate, taskID int64) stri
 	return result
 }
 
+// shellQuote wraps a value in single quotes for safe shell interpolation.
+// Single quotes within the value are handled by ending the quote, adding an escaped quote, and restarting.
+// Example: O'Reilly -> 'O'"'"'Reilly'
+func shellQuote(value string) string {
+	if value == "" {
+		return "''"
+	}
+	// Single quotes make everything literal, except single quotes themselves.
+	// To handle single quotes in the value, we exit the single-quote context,
+	// add an escaped double-quote, and re-enter single-quote context.
+	// 'value' -> 'value'
+	// O'Reilly -> 'O'"'"'Reilly'
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
 // InterpolateCommand replaces template variables in commands.
 // Supports: $CANDIDATE, $TASK_NAME
+// $CANDIDATE is shell-quoted to safely handle special characters.
 func InterpolateCommand(command string, candidate *Candidate, taskName string) string {
-	result := strings.ReplaceAll(command, "$CANDIDATE", candidate.Key)
+	result := strings.ReplaceAll(command, "$CANDIDATE", shellQuote(candidate.Key))
 	result = strings.ReplaceAll(result, "$TASK_NAME", taskName)
 	return result
 }
