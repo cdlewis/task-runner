@@ -67,63 +67,8 @@ func RunCandidateSource(source, workDir string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-// RunCommand executes a shell command and returns success status.
-func RunCommand(command, workDir string) (bool, error) {
-	cmd := exec.Command("bash", "-c", command)
-	cmd.Dir = workDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err := cmd.Run()
-	if err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
-
-// RunCommandSilent executes a shell command without output and returns success status.
-func RunCommandSilent(command, workDir string) (bool, error) {
-	cmd := exec.Command("bash", "-c", command)
-	cmd.Dir = workDir
-
-	err := cmd.Run()
-	if err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
-
-// RunCommandShowOnFail executes a shell command, capturing output and only printing it if the command fails.
-func RunCommandShowOnFail(command, workDir string) (bool, error) {
-	cmd := exec.Command("bash", "-c", command)
-	cmd.Dir = workDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	if err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			// Command failed - print captured output
-			if stdout.Len() > 0 {
-				os.Stdout.Write(stdout.Bytes())
-			}
-			if stderr.Len() > 0 {
-				os.Stderr.Write(stderr.Bytes())
-			}
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
+// RunCommand, RunCommandSilent, and RunCommandShowOnFail are now defined in command_executor.go
+// as thin wrappers around RealCommandExecutor for backward compatibility.
 
 // runningProcess tracks the currently running Claude process for signal forwarding
 var runningProcess *os.Process
@@ -412,39 +357,7 @@ func LoadTemplate(path string) (string, error) {
 	return string(data), nil
 }
 
-// HasUncommittedChanges checks if there are uncommitted git changes.
-func HasUncommittedChanges(workDir string) (bool, error) {
-	cmd := exec.Command("git", "diff", "--quiet")
-	cmd.Dir = workDir
-	err := cmd.Run()
-	if err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			return true, nil
-		}
-		return false, err
-	}
-
-	// Also check staged changes
-	cmd = exec.Command("git", "diff", "--quiet", "--cached")
-	cmd.Dir = workDir
-	err = cmd.Run()
-	if err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			return true, nil
-		}
-		return false, err
-	}
-
-	// Also check untracked files
-	cmd = exec.Command("git", "status", "--porcelain")
-	cmd.Dir = workDir
-	output, err := cmd.Output()
-	if err != nil {
-		return false, err
-	}
-
-	return len(strings.TrimSpace(string(output))) > 0, nil
-}
+// HasUncommittedChanges is now defined in command_executor.go.
 
 // CheckClaudeCommand verifies the Claude command is accessible.
 func CheckClaudeCommand(claudeCmd string) error {

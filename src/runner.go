@@ -66,6 +66,7 @@ type Runner struct {
 	claudeStats   *SessionStats
 	stopRequested bool
 	backoffLevel  int
+	executor      CommandExecutor
 }
 
 func NewRunner(env *Environment, taskName string, opts RunnerOptions) (*Runner, error) {
@@ -104,7 +105,13 @@ func NewRunner(env *Environment, taskName string, opts RunnerOptions) (*Runner, 
 		ignoredList:  ignoredList,
 		claudeLogger: claudeLogger,
 		claudeStats:  NewSessionStats(),
+		executor:     &RealCommandExecutor{},
 	}, nil
+}
+
+// setExecutor sets the command executor (for testing).
+func (r *Runner) setExecutor(exec CommandExecutor) {
+	r.executor = exec
 }
 
 func (r *Runner) Run() error {
@@ -419,7 +426,7 @@ func (r *Runner) handleSuccess(candidate *Candidate, buildVerified bool) (bool, 
 	}
 
 	// Commit changes if there are any
-	hasChanges, err := HasUncommittedChanges(r.env.ProjectDir)
+	hasChanges, err := r.executor.HasUncommittedChanges(r.env.ProjectDir)
 	if err != nil {
 		return false, fmt.Errorf("failed to check for changes: %w", err)
 	}
@@ -427,7 +434,7 @@ func (r *Runner) handleSuccess(candidate *Candidate, buildVerified bool) (bool, 
 	if hasChanges {
 		successCmd := InterpolateCommand(r.env.Config.SuccessCommand, candidate, r.task.Name)
 		fmt.Println(ColorInfo("Committing changes..."))
-		ok, err := RunCommand(successCmd, r.env.ProjectDir)
+		ok, err := r.executor.Run(successCmd, r.env.ProjectDir)
 		if err != nil {
 			return false, fmt.Errorf("success command error: %w", err)
 		}
@@ -449,7 +456,7 @@ func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
 	if r.task.AcceptBestEffort {
 		// Best effort mode: commit if build passes
 		if r.runVerify() {
-			hasChanges, err := HasUncommittedChanges(r.env.ProjectDir)
+			hasChanges, err := r.executor.HasUncommittedChanges(r.env.ProjectDir)
 			if err != nil {
 				return false, fmt.Errorf("failed to check for changes: %w", err)
 			}
@@ -459,7 +466,7 @@ func (r *Runner) handleFailure(candidate *Candidate) (bool, error) {
 				successCmd := InterpolateCommand(r.env.Config.SuccessCommand, candidate, r.task.Name)
 				// Modify message for best effort
 				successCmd = replaceBestEffort(successCmd, candidate.Key)
-				ok, err := RunCommand(successCmd, r.env.ProjectDir)
+				ok, err := r.executor.Run(successCmd, r.env.ProjectDir)
 				if err != nil {
 					return false, fmt.Errorf("best effort commit error: %w", err)
 				}
@@ -502,7 +509,7 @@ func (r *Runner) handleTimeout(candidate *Candidate) (bool, error) {
 	if r.task.AcceptBestEffort {
 		// Best effort mode: commit if build passes
 		if r.runVerify() {
-			hasChanges, err := HasUncommittedChanges(r.env.ProjectDir)
+			hasChanges, err := r.executor.HasUncommittedChanges(r.env.ProjectDir)
 			if err != nil {
 				return false, fmt.Errorf("failed to check for changes: %w", err)
 			}
@@ -511,7 +518,7 @@ func (r *Runner) handleTimeout(candidate *Candidate) (bool, error) {
 				fmt.Println(ColorInfo("Committing partial progress after timeout..."))
 				successCmd := InterpolateCommand(r.env.Config.SuccessCommand, candidate, r.task.Name)
 				successCmd = replaceBestEffort(successCmd, candidate.Key)
-				ok, err := RunCommand(successCmd, r.env.ProjectDir)
+				ok, err := r.executor.Run(successCmd, r.env.ProjectDir)
 				if err != nil {
 					return false, fmt.Errorf("timeout commit error: %w", err)
 				}
@@ -571,7 +578,7 @@ func (r *Runner) runVerify() bool {
 		return true
 	}
 	fmt.Print(ColorInfo("Verifying build... "))
-	ok, err := RunCommandShowOnFail(r.env.Config.VerifyCommand, r.env.ProjectDir)
+	ok, err := r.executor.RunShowOnFail(r.env.Config.VerifyCommand, r.env.ProjectDir)
 	if err != nil {
 		fmt.Println(ColorError(fmt.Sprintf("Verify command error: %v", err)))
 		return false
@@ -587,7 +594,7 @@ func (r *Runner) runReset() bool {
 		return true
 	}
 
-	ok, err := RunCommandSilent(r.env.Config.ResetCommand, r.env.ProjectDir)
+	ok, err := r.executor.RunSilent(r.env.Config.ResetCommand, r.env.ProjectDir)
 	if err != nil {
 		return false
 	}
@@ -609,7 +616,7 @@ func (r *Runner) runResetAndVerify() bool {
 		return true
 	}
 
-	ok, err := RunCommandSilent(r.env.Config.VerifyCommand, r.env.ProjectDir)
+	ok, err := r.executor.RunSilent(r.env.Config.VerifyCommand, r.env.ProjectDir)
 	if err != nil || !ok {
 		fmt.Println(ColorError(" FAILED"))
 		return false
@@ -624,7 +631,7 @@ func (r *Runner) runStartupReset() error {
 
 	if r.env.Config.ResetCommand == "" {
 		// No reset command configured - check if there are uncommitted changes
-		hasChanges, err := HasUncommittedChanges(r.env.ProjectDir)
+		hasChanges, err := r.executor.HasUncommittedChanges(r.env.ProjectDir)
 		if err != nil {
 			return fmt.Errorf("failed to check git status: %w", err)
 		}
@@ -636,7 +643,7 @@ func (r *Runner) runStartupReset() error {
 	}
 
 	// Run reset command
-	ok, err := RunCommandSilent(r.env.Config.ResetCommand, r.env.ProjectDir)
+	ok, err := r.executor.RunSilent(r.env.Config.ResetCommand, r.env.ProjectDir)
 	if err != nil {
 		return fmt.Errorf("reset command error: %w", err)
 	}
@@ -646,7 +653,7 @@ func (r *Runner) runStartupReset() error {
 
 	// Verify build after reset
 	if r.env.Config.VerifyCommand != "" {
-		ok, err = RunCommandSilent(r.env.Config.VerifyCommand, r.env.ProjectDir)
+		ok, err = r.executor.RunSilent(r.env.Config.VerifyCommand, r.env.ProjectDir)
 		if err != nil || !ok {
 			return fmt.Errorf("build verification failed after reset")
 		}

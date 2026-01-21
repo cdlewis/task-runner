@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -275,4 +277,303 @@ func TestGetPromptMissingTemplateIsFatal(t *testing.T) {
 	if _, isFatal := err.(*fatalError); !isFatal {
 		t.Errorf("getPrompt with missing template should return fatalError, got %T", err)
 	}
+}
+
+func TestHandleSuccess_CommitFailureIsFatal(t *testing.T) {
+	// Create a temp directory for testing
+	tmpDir := t.TempDir()
+	taskDir := filepath.Join(tmpDir, "test-task")
+	if err := os.Mkdir(taskDir, 0755); err != nil {
+		t.Fatalf("failed to create task dir: %v", err)
+	}
+
+	// Create a minimal environment for testing
+	env := &Environment{
+		ProjectDir: tmpDir,
+		Config: Config{
+			ClaudeCommand:  "claude",
+			SuccessCommand: "git commit -m $CANDIDATE",
+			VerifyCommand:  "true", // Build passes
+		},
+		Tasks: map[string]Task{
+			"test-task": {
+				Name:           "test-task",
+				Dir:            taskDir,
+				Prompt:         "test prompt",
+				AcceptBestEffort: false,
+			},
+		},
+	}
+
+	runner, err := NewRunner(env, "test-task", RunnerOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("NewRunner failed: %v", err)
+	}
+
+	// Create a mock executor that simulates commit failure
+	mock := NewMockCommandExecutor()
+	// Mock that we have uncommitted changes
+	mock.SetHasChanges(true, nil)
+	// Mock the commit command to fail
+	mock.SetResult("git commit -m 'test-candidate'", false, nil)
+
+	runner.setExecutor(mock)
+
+	candidate := &Candidate{Key: "test-candidate"}
+
+	// Handle success should return fatalError when commit fails
+	_, err = runner.handleSuccess(candidate, true) // buildVerified = true
+
+	if err == nil {
+		t.Fatal("handleSuccess with commit failure should return an error")
+	}
+
+	if _, isFatal := err.(*fatalError); !isFatal {
+		t.Errorf("handleSuccess with commit failure should return fatalError, got %T: %v", err, err)
+	}
+
+	if err.Error() != "success command returned non-zero exit code" {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestHandleSuccess_CommitSuccess(t *testing.T) {
+	// Create a temp directory for testing
+	tmpDir := t.TempDir()
+	taskDir := filepath.Join(tmpDir, "test-task")
+	if err := os.Mkdir(taskDir, 0755); err != nil {
+		t.Fatalf("failed to create task dir: %v", err)
+	}
+
+	// Create a minimal environment for testing
+	env := &Environment{
+		ProjectDir: tmpDir,
+		Config: Config{
+			ClaudeCommand:  "claude",
+			SuccessCommand: "git commit -m $CANDIDATE",
+			VerifyCommand:  "true",
+		},
+		Tasks: map[string]Task{
+			"test-task": {
+				Name:   "test-task",
+				Dir:    taskDir,
+				Prompt: "test prompt",
+			},
+		},
+	}
+
+	runner, err := NewRunner(env, "test-task", RunnerOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("NewRunner failed: %v", err)
+	}
+
+	// Create a mock executor that simulates success
+	mock := NewMockCommandExecutor()
+	// Mock that we have uncommitted changes
+	mock.SetHasChanges(true, nil)
+	// Mock success command to succeed
+	mock.SetResult("git commit -m 'test-candidate'", true, nil)
+
+	runner.setExecutor(mock)
+
+	candidate := &Candidate{Key: "test-candidate"}
+
+	// Handle success should succeed when commit succeeds
+	_, err = runner.handleSuccess(candidate, true) // buildVerified = true
+
+	if err != nil {
+		t.Errorf("handleSuccess with commit success should not return error, got: %v", err)
+	}
+}
+
+func TestHandleFailure_BestEffortCommitFailureIsFatal(t *testing.T) {
+	// Create a temp directory for testing
+	tmpDir := t.TempDir()
+	taskDir := filepath.Join(tmpDir, "test-task")
+	if err := os.Mkdir(taskDir, 0755); err != nil {
+		t.Fatalf("failed to create task dir: %v", err)
+	}
+
+	// Create a minimal environment for testing with best effort mode
+	env := &Environment{
+		ProjectDir: tmpDir,
+		Config: Config{
+			ClaudeCommand:  "claude",
+			SuccessCommand: "git commit -m $CANDIDATE",
+			VerifyCommand:  "true", // Build passes
+		},
+		Tasks: map[string]Task{
+			"test-task": {
+				Name:           "test-task",
+				Dir:            taskDir,
+				Prompt:         "test prompt",
+				AcceptBestEffort: true,
+			},
+		},
+	}
+
+	runner, err := NewRunner(env, "test-task", RunnerOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("NewRunner failed: %v", err)
+	}
+
+	// Create a mock executor
+	mock := NewMockCommandExecutor()
+	// Mock verify command to succeed (best effort mode only commits if build passes)
+	mock.SetResult("true", true, nil)
+	// Mock that we have uncommitted changes
+	mock.SetHasChanges(true, nil)
+	// Mock commit to fail
+	mock.SetResult("git commit -m 'test-candidate'", false, nil)
+
+	runner.setExecutor(mock)
+
+	candidate := &Candidate{Key: "test-candidate"}
+
+	// Handle failure in best effort mode should return fatalError when commit fails
+	_, err = runner.handleFailure(candidate)
+
+	if err == nil {
+		t.Fatal("handleFailure with commit failure should return an error")
+	}
+
+	if _, isFatal := err.(*fatalError); !isFatal {
+		t.Errorf("handleFailure with commit failure should return fatalError, got %T: %v", err, err)
+	}
+
+	if err.Error() != "best effort commit returned non-zero exit code" {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestHandleTimeout_CommitFailureIsFatal(t *testing.T) {
+	// Create a temp directory for testing
+	tmpDir := t.TempDir()
+	taskDir := filepath.Join(tmpDir, "test-task")
+	if err := os.Mkdir(taskDir, 0755); err != nil {
+		t.Fatalf("failed to create task dir: %v", err)
+	}
+
+	// Create a minimal environment for testing with best effort mode
+	env := &Environment{
+		ProjectDir: tmpDir,
+		Config: Config{
+			ClaudeCommand:  "claude",
+			SuccessCommand: "git commit -m $CANDIDATE",
+			VerifyCommand:  "true", // Build passes
+		},
+		Tasks: map[string]Task{
+			"test-task": {
+				Name:           "test-task",
+				Dir:            taskDir,
+				Prompt:         "test prompt",
+				AcceptBestEffort: true,
+			},
+		},
+	}
+
+	runner, err := NewRunner(env, "test-task", RunnerOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("NewRunner failed: %v", err)
+	}
+
+	// Create a mock executor
+	mock := NewMockCommandExecutor()
+	// Mock verify command to succeed (best effort mode only commits if build passes)
+	mock.SetResult("true", true, nil)
+	// Mock that we have uncommitted changes
+	mock.SetHasChanges(true, nil)
+	// Mock commit to fail
+	mock.SetResult("git commit -m 'test-candidate'", false, nil)
+
+	runner.setExecutor(mock)
+
+	candidate := &Candidate{Key: "test-candidate"}
+
+	// Handle timeout in best effort mode should return fatalError when commit fails
+	_, err = runner.handleTimeout(candidate)
+
+	if err == nil {
+		t.Fatal("handleTimeout with commit failure should return an error")
+	}
+
+	if _, isFatal := err.(*fatalError); !isFatal {
+		t.Errorf("handleTimeout with commit failure should return fatalError, got %T: %v", err, err)
+	}
+
+	if err.Error() != "timeout commit returned non-zero exit code" {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestMockCommandExecutor(t *testing.T) {
+	// Test the mock executor itself
+	t.Run("records calls", func(t *testing.T) {
+		mock := NewMockCommandExecutor()
+
+		success, err := mock.Run("test command", "/tmp")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !success {
+			t.Error("default should be success")
+		}
+
+		if len(mock.Calls) != 1 {
+			t.Errorf("expected 1 call, got %d", len(mock.Calls))
+		}
+
+		if mock.Calls[0].Command != "test command" {
+			t.Errorf("unexpected command: %v", mock.Calls[0].Command)
+		}
+
+		if mock.Calls[0].WorkDir != "/tmp" {
+			t.Errorf("unexpected workDir: %v", mock.Calls[0].WorkDir)
+		}
+	})
+
+	t.Run("returns configured results", func(t *testing.T) {
+		mock := NewMockCommandExecutor()
+		mock.SetResult("failing command", false, nil)
+
+		success, err := mock.Run("failing command", "/tmp")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if success {
+			t.Error("expected failure")
+		}
+	})
+
+	t.Run("call count", func(t *testing.T) {
+		mock := NewMockCommandExecutor()
+
+		mock.Run("test", "/tmp")
+		mock.Run("test", "/tmp")
+		mock.Run("other", "/tmp")
+
+		count := mock.CallCount("test")
+		if count != 2 {
+			t.Errorf("expected 2 calls, got %d", count)
+		}
+
+		if !mock.CalledWith("test") {
+			t.Error("expected CalledWith to return true")
+		}
+
+		if mock.CalledWith("not-called") {
+			t.Error("expected CalledWith to return false for uncalled command")
+		}
+	})
+
+	t.Run("clear calls", func(t *testing.T) {
+		mock := NewMockCommandExecutor()
+		mock.Run("test", "/tmp")
+
+		mock.ClearCalls()
+
+		if len(mock.Calls) != 0 {
+			t.Errorf("expected 0 calls after clear, got %d", len(mock.Calls))
+		}
+	})
 }
