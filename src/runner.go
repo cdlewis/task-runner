@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/signal"
@@ -314,25 +315,43 @@ func (r *Runner) runIteration() (done bool, err error) {
 	// Create inactivity timer - shows after 30 seconds of no streaming output
 	inactivityTimer := NewDelayedProgressTimer("Waiting for Claude...", 30*time.Second)
 
-	// Create stream callback that writes text directly to stdout with dim/italic styling
-	// Also resets the inactivity timer on each chunk of content
-	streamCb := func(text string) {
-		inactivityTimer.Reset()
-		fmt.Fprint(os.Stdout, ColorClaude(text))
-		os.Stdout.Sync()
-	}
-
 	fmt.Fprintln(os.Stdout, ColorInfo("Running Claude..."))
 	os.Stdout.Sync()
+
+	// Create buffered writer for streaming output
+	stdoutBuf := bufio.NewWriter(os.Stdout)
+
+	// Start dim+italic mode for streaming output
+	stdoutBuf.WriteString(colorDim + colorItalic)
+	stdoutBuf.Flush()
+
+	// Create stream callback with periodic flush timer
+	var flushTimer *time.Timer
+	streamCb := func(text string) {
+		inactivityTimer.Reset()
+		stdoutBuf.WriteString(text)
+
+		// Reset or create flush timer - batches small chunks together
+		if flushTimer != nil {
+			flushTimer.Stop()
+		}
+		flushTimer = time.AfterFunc(10*time.Millisecond, func() {
+			stdoutBuf.Flush()
+		})
+	}
+
 	inactivityTimer.Start()
 
 	claudeOutput, err := RunClaudeCommand(claudeCmd, claudeFlags, prompt, r.env.ProjectDir, r.claudeLogger, timeout, streamCb)
 
 	inactivityTimer.Stop()
 
-	// Reset color after streaming completes
-	fmt.Fprint(os.Stdout, colorReset)
-	os.Stdout.Sync()
+	// Stop any pending flush timer and finalize output
+	if flushTimer != nil {
+		flushTimer.Stop()
+	}
+	stdoutBuf.WriteString(colorReset)
+	stdoutBuf.Flush()
 
 	if r.claudeLogger != nil {
 		r.claudeLogger.EndEntry()
