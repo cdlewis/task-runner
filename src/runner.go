@@ -123,11 +123,6 @@ func (r *Runner) Run() error {
 		}
 	}
 
-	// Reset environment to clean state before starting
-	if err := r.runStartupReset(); err != nil {
-		return fmt.Errorf("startup reset failed: %w", err)
-	}
-
 	// Set up signal handlers
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGQUIT, syscall.SIGINT, syscall.SIGTERM)
@@ -155,6 +150,7 @@ func (r *Runner) Run() error {
 
 	startTime := time.Now()
 	iteration := 0
+	firstIteration := true
 	for {
 		if r.stopRequested {
 			fmt.Println("Stopped by user request.")
@@ -173,6 +169,14 @@ func (r *Runner) Run() error {
 
 		iteration++
 		fmt.Print(IterationBanner(iteration, time.Now().Format("15:04:05")))
+
+		// Reset environment to clean state at start of first iteration
+		if firstIteration {
+			if err := r.runStartupReset(); err != nil {
+				return fmt.Errorf("startup reset failed: %w", err)
+			}
+			firstIteration = false
+		}
 
 		done, err := r.runIteration()
 		if err != nil {
