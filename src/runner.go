@@ -329,8 +329,9 @@ func (r *Runner) runIteration() (done bool, err error) {
 	stdoutBuf.WriteString(colorDim + colorItalic)
 	stdoutBuf.Flush()
 
-	// Create stream callback with periodic flush timer
+	// Create stream callback with periodic flush timer and synchronization
 	var flushTimer *time.Timer
+	flushDoneChan := make(chan struct{})
 	streamCb := func(text string) {
 		inactivityTimer.Reset()
 		stdoutBuf.WriteString(text)
@@ -341,6 +342,11 @@ func (r *Runner) runIteration() (done bool, err error) {
 		}
 		flushTimer = time.AfterFunc(10*time.Millisecond, func() {
 			stdoutBuf.Flush()
+			select {
+			case flushDoneChan <- struct{}{}:
+			default:
+				// Channel buffer full - previous flush not yet consumed, that's ok
+			}
 		})
 	}
 
@@ -355,6 +361,14 @@ func (r *Runner) runIteration() (done bool, err error) {
 		flushTimer.Stop()
 	}
 	// Ensure all buffered content is flushed BEFORE writing reset
+	stdoutBuf.Flush()
+	// Wait for any in-progress flush to complete (drain any pending signal)
+	select {
+	case <-flushDoneChan:
+	case <-time.After(50 * time.Millisecond):
+		// Timeout - proceed anyway, likely nothing to flush
+	}
+	// Final flush to catch any content that arrived after the first flush
 	stdoutBuf.Flush()
 	stdoutBuf.WriteString(colorReset)
 	stdoutBuf.Flush()
