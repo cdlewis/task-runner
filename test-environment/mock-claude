@@ -54,18 +54,127 @@ fi
 # Helper to stream a message chunk
 stream_message() {
     local text="$1"
-    local words=($text)
-    local word_count=${#words[@]}
+    local mode="${MOCK_CLAUDE_MODE:-word}"
 
-    for ((i=0; i<word_count; i++)); do
-        if [[ $i -lt $((word_count - 1)) ]]; then
-            text_chunk="${words[i]} "
-        else
-            text_chunk="${words[i]}"
-        fi
-        sleep 0.05
-        text_chunk=$(echo "$text_chunk" | sed 's/"/\\"/g')
-        echo "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"${text_chunk}\"}}}"
+    case "$mode" in
+        tiny)
+            # Stream 1 character at a time
+            for ((i=0; i<${#text}; i++)); do
+                char="${text:$i:1}"
+                sleep 0.01
+                char=$(echo "$char" | sed 's/"/\\"/g')
+                echo "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"${char}\"}}}"
+            done
+            ;;
+        small)
+            # Stream 2-5 characters at a time
+            local chunk_size=3
+            local pos=0
+            while [[ $pos -lt ${#text} ]]; do
+                # Vary chunk size slightly
+                chunk_size=$((2 + (pos % 4)))
+                local chunk="${text:$pos:$chunk_size}"
+                pos=$((pos + chunk_size))
+                sleep 0.02
+                chunk=$(echo "$chunk" | sed 's/"/\\"/g')
+                echo "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"${chunk}\"}}}"
+            done
+            ;;
+        mixed)
+            # Random chunk sizes from 1-100 characters
+            local pos=0
+            while [[ $pos -lt ${#text} ]]; do
+                local chunk_size=$((1 + (RANDOM % 100)))
+                local chunk="${text:$pos:$chunk_size}"
+                pos=$((pos + chunk_size))
+                sleep 0.01
+                chunk=$(echo "$chunk" | sed 's/"/\\"/g')
+                echo "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"${chunk}\"}}}"
+            done
+            ;;
+        large)
+            # Stream entire text in single chunk (simulates fast output)
+            sleep 0.05
+            local chunk=$(echo "$text" | sed 's/"/\\"/g')
+            echo "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"${chunk}\"}}}"
+            ;;
+        alternating)
+            # Alternate between tiny and large chunks
+            local pos=0
+            local large=true
+            while [[ $pos -lt ${#text} ]]; do
+                local chunk_size
+                if $large; then
+                    chunk_size=50
+                else
+                    chunk_size=1
+                fi
+                large=!$large
+                local chunk="${text:$pos:$chunk_size}"
+                pos=$((pos + chunk_size))
+                sleep 0.02
+                chunk=$(echo "$chunk" | sed 's/"/\\"/g')
+                echo "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"${chunk}\"}}}"
+            done
+            ;;
+        ansi)
+            # Text with ANSI codes split across chunks
+            local ansi_text="[1mBold[0m [3mItalic[0m [90mDim[0m ${text}"
+            stream_message_impl "$ansi_text" 10
+            ;;
+        newlines)
+            # Text with newlines at various positions
+            local nl_text="Line 1\nLine 2\nLine 3\n${text}\nEnd"
+            stream_message_impl "$nl_text" 5
+            ;;
+        rapid)
+            # Very rapid tiny chunks with minimal delay
+            for ((i=0; i<${#text}; i++)); do
+                char="${text:$i:1}"
+                sleep 0.001  # Minimal delay
+                char=$(echo "$char" | sed 's/"/\\"/g')
+                echo "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"${char}\"}}}"
+            done
+            ;;
+        multibyte)
+            # UTF-8 multibyte characters (emoji, CJK)
+            local mb_text="日本語 中文 🎉 🔥 ${text}"
+            for ((i=0; i<${#mb_text}; i++)); do
+                char="${mb_text:$i:1}"
+                sleep 0.02
+                char=$(echo "$char" | sed 's/"/\\"/g')
+                echo "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"${char}\"}}}"
+            done
+            ;;
+        *)
+            # Default: word-by-word streaming
+            local words=($text)
+            local word_count=${#words[@]}
+            for ((i=0; i<word_count; i++)); do
+                if [[ $i -lt $((word_count - 1)) ]]; then
+                    text_chunk="${words[i]} "
+                else
+                    text_chunk="${words[i]}"
+                fi
+                sleep 0.05
+                text_chunk=$(echo "$text_chunk" | sed 's/"/\\"/g')
+                echo "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"${text_chunk}\"}}}"
+            done
+            ;;
+    esac
+}
+
+# Helper implementation for fixed-size chunks
+stream_message_impl() {
+    local text="$1"
+    local chunk_size="$2"
+    local pos=0
+    while [[ $pos -lt ${#text} ]]; do
+        local chunk="${text:$pos:$chunk_size}"
+        pos=$((pos + chunk_size))
+        sleep 0.02
+        chunk=$(echo "$chunk" | sed 's/"/\\"/g')
+        echo "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"${chunk}\"}}}"
     done
 }
 

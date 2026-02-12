@@ -17,6 +17,7 @@
 #   2. Slow candidate source - Progress timer appears after 5 seconds
 #   3. Slow Claude          - Inactivity timer appears after 30 seconds
 #   4. Empty messages       - No extra blank lines in output
+#   5-14. Streaming edge cases - Various chunk sizes and patterns to stress-test buffering
 
 set -e
 
@@ -135,6 +136,88 @@ main() {
 
     cleanup
 
+    # Edge case tests: Various chunking patterns
+    run_test \
+        "Test 5: Tiny Chunks (1 char)" \
+        "demo-task" \
+        "Each character streamed individually, no corruption or overwriting" \
+        "MOCK_CLAUDE_MODE=tiny MOCK_CLAUDE_FIX=0" \
+        30
+
+    cleanup
+
+    run_test \
+        "Test 6: Small Chunks (2-5 chars)" \
+        "demo-task" \
+        "Chunks of 2-5 characters, tests word fragmentation" \
+        "MOCK_CLAUDE_MODE=small MOCK_CLAUDE_FIX=0" \
+        30
+
+    cleanup
+
+    run_test \
+        "Test 7: Mixed Chunk Sizes" \
+        "demo-task" \
+        "Random chunk sizes from 1-100 characters" \
+        "MOCK_CLAUDE_MODE=mixed MOCK_CLAUDE_FIX=0" \
+        30
+
+    cleanup
+
+    run_test \
+        "Test 8: Large Chunks" \
+        "demo-task" \
+        "Large text blocks sent in single chunks" \
+        "MOCK_CLAUDE_MODE=large MOCK_CLAUDE_FIX=0" \
+        30
+
+    cleanup
+
+    run_test \
+        "Test 9: Alternating Sizes" \
+        "demo-task" \
+        "Tiny chunk, then large chunk, repeated" \
+        "MOCK_CLAUDE_MODE=alternating MOCK_CLAUDE_FIX=0" \
+        30
+
+    cleanup
+
+    run_test \
+        "Test 10: ANSI in Chunks" \
+        "demo-task" \
+        "ANSI codes split across chunk boundaries" \
+        "MOCK_CLAUDE_MODE=ansi MOCK_CLAUDE_FIX=0" \
+        30
+
+    cleanup
+
+    run_test \
+        "Test 11: Newline Boundaries" \
+        "demo-task" \
+        "Newlines at start, middle, end of chunks" \
+        "MOCK_CLAUDE_MODE=newlines MOCK_CLAUDE_FIX=0" \
+        30
+
+    cleanup
+
+    run_test \
+        "Test 12: Rapid Fire" \
+        "demo-task" \
+        "Many tiny chunks sent with minimal delay (stress test)" \
+        "MOCK_CLAUDE_MODE=rapid MOCK_CLAUDE_FIX=0" \
+        30
+
+    cleanup
+
+    run_test \
+        "Test 13: Multibyte Split" \
+        "demo-task" \
+        "UTF-8 sequences split across chunks" \
+        "MOCK_CLAUDE_MODE=multibyte MOCK_CLAUDE_FIX=0" \
+        30
+
+    cleanup
+
     header "All Tests Complete"
     echo -e "${GREEN}Smoke test suite finished.${NC}"
     echo ""
@@ -143,6 +226,7 @@ main() {
     echo "  2. Slow candidate    - Progress timer after 5s"
     echo "  3. Slow Claude       - Inactivity timer after 30s"
     echo "  4. Empty messages    - No extra blank lines"
+    echo "  5-13. Edge cases     - No corruption, overwriting, or excessive spacing"
 }
 
 main "$@"

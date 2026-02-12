@@ -316,14 +316,15 @@ func (r *Runner) runIteration() (done bool, err error) {
 		timeout = r.task.Timeout
 	}
 
-	// Create inactivity timer - shows after 30 seconds of no streaming output
-	inactivityTimer := NewDelayedProgressTimer("Waiting for Claude...", 30*time.Second)
-
-	fmt.Fprintln(os.Stdout, ColorInfo("Running Claude..."))
-	os.Stdout.Sync()
-
 	// Create buffered writer for streaming output
 	stdoutBuf := bufio.NewWriter(os.Stdout)
+
+	// Create inactivity timer - shows after 30 seconds of no streaming output
+	// Timer writes directly to os.Stdout (not buffered) because it uses \r for line redrawing
+	inactivityTimer := NewDelayedProgressTimer("Waiting for Claude...", 30*time.Second)
+
+	fmt.Fprintln(stdoutBuf, ColorInfo("Running Claude..."))
+	stdoutBuf.Flush()
 
 	// Start dim+italic mode for streaming output
 	stdoutBuf.WriteString(colorDim + colorItalic)
@@ -333,6 +334,8 @@ func (r *Runner) runIteration() (done bool, err error) {
 	var flushTimer *time.Timer
 	flushDoneChan := make(chan struct{})
 	streamCb := func(text string) {
+		// Flush buffer before resetting timer to prevent timer from corrupting pending output
+		stdoutBuf.Flush()
 		inactivityTimer.Reset()
 		stdoutBuf.WriteString(text)
 

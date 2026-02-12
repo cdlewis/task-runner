@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -59,6 +60,7 @@ type ProgressTimer struct {
 	streamCh     chan string
 	lastLine     string // Tracks last streamed line for timer redrawing
 	mu           sync.Mutex
+	writer       io.Writer
 }
 
 // NewProgressTimer creates a new timer with the given label.
@@ -69,7 +71,15 @@ func NewProgressTimer(label string, stats *SessionStats) *ProgressTimer {
 		stopCh:   make(chan struct{}),
 		doneCh:   make(chan struct{}),
 		streamCh: make(chan string, 100), // Buffer to avoid blocking
+		writer:   os.Stdout,
 	}
+}
+
+// SetWriter sets the writer for timer output.
+func (p *ProgressTimer) SetWriter(w io.Writer) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.writer = w
 }
 
 // Start begins the timer display. Call Stop() when the operation completes.
@@ -78,7 +88,13 @@ func (p *ProgressTimer) Start() {
 	p.startTime = time.Now()
 
 	// Hide cursor
-	fmt.Fprint(os.Stdout, "\033[?25l")
+	p.mu.Lock()
+	writer := p.writer
+	p.mu.Unlock()
+	if writer == nil {
+		writer = os.Stdout
+	}
+	fmt.Fprint(writer, "\033[?25l")
 
 	go func() {
 		defer close(p.doneCh)
@@ -121,15 +137,20 @@ func (p *ProgressTimer) handleStreamText(text string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	writer := p.writer
+	if writer == nil {
+		writer = os.Stdout
+	}
+
 	// Clear the timer line
-	fmt.Fprint(os.Stdout, "\r\033[K")
+	fmt.Fprint(writer, "\r\033[K")
 
 	// Print the text immediately
-	fmt.Fprint(os.Stdout, text)
+	fmt.Fprint(writer, text)
 
 	// Ensure we end with newline so timer appears on next line
 	if !strings.HasSuffix(text, "\n") {
-		fmt.Fprint(os.Stdout, "\n")
+		fmt.Fprint(writer, "\n")
 	}
 }
 
@@ -149,8 +170,15 @@ func (p *ProgressTimer) printProgress() {
 		timerPart = fmt.Sprintf("(%s)", formatDuration(elapsed))
 	}
 
+	p.mu.Lock()
+	writer := p.writer
+	p.mu.Unlock()
+	if writer == nil {
+		writer = os.Stdout
+	}
+
 	// \r moves to start of line, \033[K clears to end of line
-	fmt.Fprintf(os.Stdout, "\r%s %s\033[K", ColorInfo(p.label), ColorDim(timerPart))
+	fmt.Fprintf(writer, "\r%s %s\033[K", ColorInfo(p.label), ColorDim(timerPart))
 }
 
 // Stop stops the timer and records the duration. Returns the elapsed duration.
@@ -163,27 +191,46 @@ func (p *ProgressTimer) Stop() time.Duration {
 		p.stats.Add(duration)
 	}
 
+	p.mu.Lock()
+	writer := p.writer
+	p.mu.Unlock()
+	if writer == nil {
+		writer = os.Stdout
+	}
+
 	// Show cursor and move to new line (keep timer text visible)
-	fmt.Fprintf(os.Stdout, "\033[?25h\n")
+	fmt.Fprintf(writer, "\033[?25h\n")
 
 	return duration
 }
 
 // DelayedProgressTimer displays a timer only after the operation exceeds a delay.
 type DelayedProgressTimer struct {
-	label     string
-	delay     time.Duration
+	label   string
+	delay   time.Duration
 	startTime time.Time
-	mu        sync.Mutex
-	timer     *ProgressTimer
-	stopped   bool
+	mu      sync.Mutex
+	timer   *ProgressTimer
+	stopped bool
+	writer  io.Writer
 }
 
 // NewDelayedProgressTimer creates a new delayed timer with the given label and delay.
 func NewDelayedProgressTimer(label string, delay time.Duration) *DelayedProgressTimer {
 	return &DelayedProgressTimer{
-		label: label,
-		delay: delay,
+		label:  label,
+		delay:  delay,
+		writer: os.Stdout,
+	}
+}
+
+// SetWriter sets the writer for timer output.
+func (d *DelayedProgressTimer) SetWriter(w io.Writer) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.writer = w
+	if d.timer != nil {
+		d.timer.SetWriter(w)
 	}
 }
 
@@ -195,9 +242,14 @@ func (d *DelayedProgressTimer) Start() {
 		<-time.After(d.delay)
 		d.mu.Lock()
 		if !d.stopped {
+			writer := d.writer
+			if writer == nil {
+				writer = os.Stdout
+			}
 			// Print label and start timer only after delay has passed
-			fmt.Fprintf(os.Stdout, "%s\033[K", ColorInfo(d.label))
+			fmt.Fprintf(writer, "%s\033[K", ColorInfo(d.label))
 			d.timer = NewProgressTimer(d.label, nil)
+			d.timer.SetWriter(d.writer)
 			d.timer.Start()
 		}
 		d.mu.Unlock()
@@ -212,8 +264,12 @@ func (d *DelayedProgressTimer) Stop() {
 		d.timer.Stop()
 		d.timer = nil
 	} else {
+		writer := d.writer
+		if writer == nil {
+			writer = os.Stdout
+		}
 		// No timer was shown, just end the line
-		fmt.Fprintf(os.Stdout, "\n")
+		fmt.Fprintf(writer, "\n")
 	}
 	d.mu.Unlock()
 }
@@ -224,8 +280,12 @@ func (d *DelayedProgressTimer) Reset() {
 	d.mu.Lock()
 	// Stop any running timer display
 	if d.timer != nil {
+		writer := d.writer
+		if writer == nil {
+			writer = os.Stdout
+		}
 		// Clear the timer line before stopping (otherwise the timer text stays visible)
-		fmt.Fprint(os.Stdout, "\r\033[K")
+		fmt.Fprint(writer, "\r\033[K")
 		d.timer.Stop()
 		d.timer = nil
 	}
@@ -239,6 +299,7 @@ func (d *DelayedProgressTimer) Reset() {
 		d.mu.Lock()
 		if !d.stopped && d.timer == nil {
 			d.timer = NewProgressTimer(d.label, nil)
+			d.timer.SetWriter(d.writer)
 			d.timer.Start()
 		}
 		d.mu.Unlock()
