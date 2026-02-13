@@ -3,10 +3,13 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -17,6 +20,47 @@ const (
 	rateLimitBackoff = 1 * time.Hour
 	rateLimitPhrase  = "You've hit your limit"
 )
+
+// SyncWriter provides synchronized, buffered writing to prevent concurrent
+// writes from corrupting ANSI codes and output.
+type SyncWriter struct {
+	mu     sync.Mutex
+	writer *bufio.Writer
+	color  string // Current active color code
+}
+
+// NewSyncWriter creates a new synchronized writer.
+func NewSyncWriter(w io.Writer) *SyncWriter {
+	return &SyncWriter{
+		writer: bufio.NewWriter(w),
+	}
+}
+
+// WriteString writes text with mutex protection and immediate flush.
+func (s *SyncWriter) WriteString(text string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.writer.WriteString(text)
+	s.writer.Flush()
+}
+
+// SetColor sets the terminal color with mutex protection.
+func (s *SyncWriter) SetColor(color string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.writer.WriteString(color)
+	s.color = color
+	s.writer.Flush()
+}
+
+// ResetColor resets the terminal color with mutex protection.
+func (s *SyncWriter) ResetColor() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.writer.WriteString(colorReset)
+	s.color = ""
+	s.writer.Flush()
+}
 
 // rateLimitError indicates Claude returned a rate limit message
 type rateLimitError struct {
@@ -324,65 +368,39 @@ func (r *Runner) runIteration() (done bool, err error) {
 		timeout = r.task.Timeout
 	}
 
-	// Create buffered writer for streaming output
-	stdoutBuf := bufio.NewWriter(os.Stdout)
+	// Create SyncWriter for all output during streaming
+	syncWriter := NewSyncWriter(os.Stdout)
 
 	// Create inactivity timer - shows after 30 seconds of no streaming output
-	// Timer writes directly to os.Stdout (not buffered) because it uses \r for line redrawing
+	// Note: timer will be stopped when streaming starts
 	inactivityTimer := NewDelayedProgressTimer("Waiting for Claude...", 30*time.Second)
 
-	fmt.Fprintln(stdoutBuf, ColorInfo("Running Claude..."))
-	stdoutBuf.Flush()
+	fmt.Println(ColorInfo("Running Claude..."))
 
-	// Start dim+italic mode for streaming output
-	stdoutBuf.WriteString(colorDim + colorItalic)
-	stdoutBuf.Flush()
+	// Track first chunk to stop timer and set color
+	firstChunk := &atomic.Bool{}
+	firstChunk.Store(true)
 
-	// Create stream callback with periodic flush timer and synchronization
-	var flushTimer *time.Timer
-	flushDoneChan := make(chan struct{})
+	// Create stream callback - all writes go through SyncWriter
 	streamCb := func(text string) {
-		// Flush buffer before resetting timer to prevent timer from corrupting pending output
-		stdoutBuf.Flush()
-		inactivityTimer.Reset()
-		stdoutBuf.WriteString(text)
-
-		// Reset or create flush timer - batches small chunks together
-		if flushTimer != nil {
-			flushTimer.Stop()
+		// On first chunk, stop inactivity timer and set color
+		if firstChunk.Load() {
+			firstChunk.Store(false)
+			inactivityTimer.Stop()
+			syncWriter.SetColor(colorDim + colorItalic)
 		}
-		flushTimer = time.AfterFunc(10*time.Millisecond, func() {
-			stdoutBuf.Flush()
-			select {
-			case flushDoneChan <- struct{}{}:
-			default:
-				// Channel buffer full - previous flush not yet consumed, that's ok
-			}
-		})
+		syncWriter.WriteString(text)
 	}
 
 	inactivityTimer.Start()
 
 	claudeOutput, err := RunClaudeCommand(claudeCmd, claudeFlags, prompt, r.env.ProjectDir, r.claudeLogger, timeout, streamCb)
 
+	// Make sure timer is stopped (in case no stream chunks arrived)
 	inactivityTimer.Stop()
 
-	// Stop any pending flush timer and finalize output
-	if flushTimer != nil {
-		flushTimer.Stop()
-	}
-	// Ensure all buffered content is flushed BEFORE writing reset
-	stdoutBuf.Flush()
-	// Wait for any in-progress flush to complete (drain any pending signal)
-	select {
-	case <-flushDoneChan:
-	case <-time.After(50 * time.Millisecond):
-		// Timeout - proceed anyway, likely nothing to flush
-	}
-	// Final flush to catch any content that arrived after the first flush
-	stdoutBuf.Flush()
-	stdoutBuf.WriteString(colorReset)
-	stdoutBuf.Flush()
+	// Reset color and finalize output
+	syncWriter.ResetColor()
 
 	if r.claudeLogger != nil {
 		r.claudeLogger.EndEntry()
